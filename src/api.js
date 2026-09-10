@@ -123,16 +123,20 @@ function setStorage(key, value) {
     setStorage("rb_items", mergedItems);
   }
 
-  // Force-migrate settings: always update name/address/phone to the real restaurant details
-  // (preserves paper_size if the user changed it)
-  const existingSettings = getStorage("rb_settings", null);
-  if (!existingSettings || existingSettings.restaurant_name === "My Restaurant" || !existingSettings.address) {
-    const merged = { ...DEFAULT_SETTINGS, ...(existingSettings || {}) };
-    merged.restaurant_name = DEFAULT_SETTINGS.restaurant_name;
-    merged.address         = DEFAULT_SETTINGS.address;
-    merged.phone           = DEFAULT_SETTINGS.phone;
-    if (!existingSettings?.paper_size) merged.paper_size = DEFAULT_SETTINGS.paper_size;
-    setStorage("rb_settings", merged);
+  // SETTINGS VERSION: bump this number whenever restaurant details change.
+  // On mismatch, name/address/phone are force-written (paper_size is preserved).
+  const SETTINGS_VER = 2;
+  const existingSettings = getStorage("rb_settings", {});
+  if ((existingSettings._ver || 0) < SETTINGS_VER) {
+    const updated = {
+      ...existingSettings,
+      restaurant_name: DEFAULT_SETTINGS.restaurant_name,
+      address:         DEFAULT_SETTINGS.address,
+      phone:           DEFAULT_SETTINGS.phone,
+      paper_size:      existingSettings.paper_size || DEFAULT_SETTINGS.paper_size,
+      _ver:            SETTINGS_VER,
+    };
+    setStorage("rb_settings", updated);
   }
   if (!localStorage.getItem("rb_bills")) {
     setStorage("rb_bills", []);
