@@ -233,7 +233,14 @@ export async function deleteItem(id) {
 
 // Restaurant settings
 export async function getSettings() {
-  return getStorage("rb_settings", DEFAULT_SETTINGS);
+  const saved = getStorage("rb_settings", DEFAULT_SETTINGS);
+  // Always enforce the real restaurant details — paper_size comes from user preference
+  return {
+    ...saved,
+    restaurant_name: DEFAULT_SETTINGS.restaurant_name,
+    address:         DEFAULT_SETTINGS.address,
+    phone:           DEFAULT_SETTINGS.phone,
+  };
 }
 
 export async function saveSettings(data) {
