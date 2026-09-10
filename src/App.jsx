@@ -279,70 +279,70 @@ function ReceiptContent({ bill, settings }) {
   return (
     <div className="receipt" style={{
       fontFamily: "'Courier New', Courier, monospace",
-      fontSize: is58 ? "10px" : "12px",
-      width: is58 ? "48mm" : "72mm",
+      fontSize: is58 ? "7px" : "11px",
+      width: is58 ? "44mm" : "72mm",
       margin: "0 auto",
-      lineHeight: "1.4"
+      lineHeight: "1.3"
     }}>
-      <h2 style={{ textAlign: "center", margin: "0 0 3px", fontSize: is58 ? "13px" : "16px" }}>{settings?.restaurant_name || "My Restaurant"}</h2>
-      <p style={{ textAlign: "center", margin: "1px 0", wordBreak: "break-word" }}>{settings?.address}</p>
-      <p style={{ textAlign: "center", margin: "1px 0" }}>{settings?.phone}</p>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "5px 0" }} />
-      <div>Bill: {bill.bill_no}</div>
-      <div>{new Date(bill.created_at).toLocaleString()}</div>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "5px 0" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "9px" : "11px", marginBottom: "3px" }}>
+      <h2 style={{ textAlign: "center", margin: "0 0 2px", fontSize: is58 ? "11px" : "15px", wordBreak: "break-word" }}>{settings?.restaurant_name || "My Restaurant"}</h2>
+      <p style={{ textAlign: "center", margin: "1px 0", wordBreak: "break-word", fontSize: is58 ? "7px" : "10px" }}>{settings?.address}</p>
+      <p style={{ textAlign: "center", margin: "1px 0", fontSize: is58 ? "7px" : "10px" }}>{settings?.phone}</p>
+      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
+      <div style={{ fontSize: is58 ? "7px" : "10px" }}>Bill: {bill.bill_no}</div>
+      <div style={{ fontSize: is58 ? "7px" : "10px" }}>{new Date(bill.created_at).toLocaleString()}</div>
+      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "7px" : "10px", marginBottom: "2px" }}>
         <span>ITEM</span><span>AMT</span>
       </div>
       {bill.items?.map((x, i) => (
-        <div key={i} style={{ marginBottom: "3px" }}>
-          <div style={{ wordBreak: "break-word", paddingRight: "4px" }}>{x.item_name} x{x.quantity}</div>
+        <div key={i} style={{ marginBottom: "2px", fontSize: is58 ? "7px" : "10px" }}>
+          <div style={{ wordBreak: "break-word" }}>{x.item_name} x{x.quantity}</div>
           <div style={{ textAlign: "right" }}>{money(x.amount)}</div>
         </div>
       ))}
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "5px 0" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "12px" : "14px" }}>
+      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "9px" : "13px" }}>
         <span>TOTAL</span><span>{money(bill.total)}</span>
       </div>
-      <div style={{ textAlign: "center", marginTop: "4px" }}>Payment: {bill.payment_method}</div>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "5px 0" }} />
-      <div style={{ textAlign: "center", fontWeight: "bold", marginBottom: "6px" }}>Thank You! Visit Again</div>
+      <div style={{ textAlign: "center", marginTop: "2px", fontSize: is58 ? "7px" : "10px" }}>Payment: {bill.payment_method}</div>
+      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
+      <div style={{ textAlign: "center", fontWeight: "bold", fontSize: is58 ? "8px" : "11px", marginBottom: "4px" }}>Thank You! Visit Again</div>
     </div>
   );
 }
 function printReceipt(bill, settings) {
   const is58 = (settings?.paper_size || "58mm") === "58mm";
   const pageW  = is58 ? "58mm" : "80mm";
-  // Printable content width = page width − left margin − right margin
-  // For 58mm: 58 - 3 - 3 = 52mm usable; for 80mm: 80 - 4 - 4 = 72mm usable
-  const bodyW  = is58 ? "52mm" : "72mm";
-  const margin = is58 ? "3mm" : "4mm";
-  const fBase  = is58 ? "9px"  : "11px";
-  const fHead  = is58 ? "12px" : "15px";
-  const fTitle = is58 ? "14px" : "18px";
-  const fTotal = is58 ? "11px" : "14px";
+  // 58mm paper: 2mm margin each side → 54mm usable body width
+  // 80mm paper: 4mm margin each side → 72mm usable body width
+  const bodyW  = is58 ? "54mm" : "72mm";
+  const margin = is58 ? "2mm" : "4mm";
+  const fBase  = is58 ? "7px"  : "11px";   // body text
+  const fTitle = is58 ? "11px" : "16px";   // restaurant name
+  const fTotal = is58 ? "9px"  : "13px";   // TOTAL line
+  const fFoot  = is58 ? "8px"  : "11px";   // footer / thank you
 
   const bodyHTML = buildReceiptHTML(bill, settings, is58);
   const css = [
     `@page{size:${pageW} auto;margin:${margin}}`,
     `*{box-sizing:border-box}`,
-    `body{font-family:'Courier New',Courier,monospace;width:${bodyW};margin:0;padding:0;font-size:${fBase};line-height:1.4;color:#000}`,
-    `.receipt{width:100%}`,
-    `.rh2{text-align:center;margin:0 0 3px;font-size:${fTitle};font-weight:bold;word-break:break-word}`,
-    `.rp{text-align:center;margin:1px 0;word-break:break-word;font-size:${fBase}}`,
-    `.rhr{border:0;border-top:1px dashed #000;margin:5px 0}`,
-    `.rinfo{margin:1px 0;word-break:break-word}`,
-    `.rcols{display:flex;justify-content:space-between;font-size:${fBase};font-weight:bold;margin-bottom:3px}`,
-    `.ritem{margin-bottom:3px;width:100%}`,
-    `.ritem-name{word-break:break-word;font-size:${fBase}}`,
+    `body{font-family:'Courier New',Courier,monospace;width:${bodyW};margin:0;padding:0;font-size:${fBase};line-height:1.3;color:#000;overflow:hidden}`,
+    `.receipt{width:100%;overflow:hidden}`,
+    `.rh2{text-align:center;margin:0 0 2px;font-size:${fTitle};font-weight:bold;word-break:break-word;white-space:normal}`,
+    `.rp{text-align:center;margin:1px 0;word-break:break-word;font-size:${fBase};white-space:normal}`,
+    `.rhr{border:0;border-top:1px dashed #000;margin:3px 0}`,
+    `.rinfo{margin:1px 0;word-break:break-word;font-size:${fBase}}`,
+    `.rcols{display:flex;justify-content:space-between;font-size:${fBase};font-weight:bold;margin-bottom:2px}`,
+    `.ritem{margin-bottom:2px;width:100%}`,
+    `.ritem-name{word-break:break-word;font-size:${fBase};white-space:normal}`,
     `.ritem-amt{text-align:right;font-size:${fBase}}`,
     `.rtotal{display:flex;justify-content:space-between;font-weight:bold;font-size:${fTotal};margin:2px 0}`,
-    `.rcenter{text-align:center;word-break:break-word}`,
-    `.rfooter{text-align:center;font-weight:bold;font-size:${fHead};margin-bottom:6px}`,
+    `.rcenter{text-align:center;word-break:break-word;font-size:${fBase}}`,
+    `.rfooter{text-align:center;font-weight:bold;font-size:${fFoot};margin-bottom:4px;word-break:break-word}`,
   ].join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${bill.bill_no}</title><style>${css}</style></head><body>${bodyHTML}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}<\/script></body></html>`;
-  const w = window.open("", "_blank", "width=340,height=600");
+  const w = window.open("", "_blank", "width=320,height=600");
   if (!w) return alert("Please allow popups for printing.");
   w.document.write(html);
   w.document.close();
