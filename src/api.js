@@ -72,10 +72,10 @@ const DEFAULT_ITEMS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  restaurant_name: "My Restaurant",
-  address: "",
-  phone: "",
-  paper_size: "80mm"
+  restaurant_name: "SASH MANDI DARBAR",
+  address: "Main Road, above Exide Battery showroom, Near Govt. Hospital, Yellandu, Khammam, Telangana",
+  phone: "9652718363",
+  paper_size: "58mm"
 };
 
 function getStorage(key, fallback) {
@@ -123,8 +123,16 @@ function setStorage(key, value) {
     setStorage("rb_items", mergedItems);
   }
 
-  if (!localStorage.getItem("rb_settings")) {
-    setStorage("rb_settings", DEFAULT_SETTINGS);
+  // Force-migrate settings: always update name/address/phone to the real restaurant details
+  // (preserves paper_size if the user changed it)
+  const existingSettings = getStorage("rb_settings", null);
+  if (!existingSettings || existingSettings.restaurant_name === "My Restaurant" || !existingSettings.address) {
+    const merged = { ...DEFAULT_SETTINGS, ...(existingSettings || {}) };
+    merged.restaurant_name = DEFAULT_SETTINGS.restaurant_name;
+    merged.address         = DEFAULT_SETTINGS.address;
+    merged.phone           = DEFAULT_SETTINGS.phone;
+    if (!existingSettings?.paper_size) merged.paper_size = DEFAULT_SETTINGS.paper_size;
+    setStorage("rb_settings", merged);
   }
   if (!localStorage.getItem("rb_bills")) {
     setStorage("rb_bills", []);

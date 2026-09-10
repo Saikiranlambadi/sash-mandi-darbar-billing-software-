@@ -284,7 +284,7 @@ function ReceiptContent({ bill, settings }) {
       margin: "0 auto",
       lineHeight: "1.3"
     }}>
-      <h2 style={{ textAlign: "center", margin: "0 0 2px", fontSize: is58 ? "11px" : "15px", wordBreak: "break-word" }}>{settings?.restaurant_name || "My Restaurant"}</h2>
+      <h2 style={{ textAlign: "center", margin: "0 0 2px", fontSize: is58 ? "11px" : "15px", wordBreak: "break-word" }}>{settings?.restaurant_name || "SASH MANDI DARBAR"}</h2>
       <p style={{ textAlign: "center", margin: "1px 0", wordBreak: "break-word", fontSize: is58 ? "7px" : "10px" }}>{settings?.address}</p>
       <p style={{ textAlign: "center", margin: "1px 0", fontSize: is58 ? "7px" : "10px" }}>{settings?.phone}</p>
       <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
@@ -356,7 +356,7 @@ function buildReceiptHTML(bill, settings) {
   ).join("");
   return [
     `<div class="receipt">`,
-    `<div class="rh2">${settings?.restaurant_name || "My Restaurant"}</div>`,
+    `<div class="rh2">${settings?.restaurant_name || "SASH MANDI DARBAR"}</div>`,
     settings?.address ? `<div class="rp">${settings.address}</div>` : "",
     settings?.phone   ? `<div class="rp">Ph: ${settings.phone}</div>` : "",
     `<hr class="rhr"/>`,
