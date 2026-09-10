@@ -312,45 +312,47 @@ function ReceiptContent({ bill, settings }) {
 }
 function printReceipt(bill, settings) {
   const is58 = (settings?.paper_size || "58mm") === "58mm";
-  const pageW  = is58 ? "58mm" : "80mm";
-  // 58mm paper: 2mm margin each side → 54mm usable body width
-  // 80mm paper: 4mm margin each side → 72mm usable body width
-  const bodyW  = is58 ? "54mm" : "72mm";
-  const margin = is58 ? "2mm" : "4mm";
-  const fBase  = is58 ? "7px"  : "11px";   // body text
-  const fTitle = is58 ? "11px" : "16px";   // restaurant name
-  const fTotal = is58 ? "9px"  : "13px";   // TOTAL line
-  const fFoot  = is58 ? "8px"  : "11px";   // footer / thank you
+  const pageW = is58 ? "58mm" : "80mm";
 
-  const bodyHTML = buildReceiptHTML(bill, settings, is58);
+  // KEY FIX: use pt (print units) not px, and let body width = 100%
+  // so the printer paper edge is the boundary — not a CSS mm value.
+  // Use HTML tables instead of flexbox — far more reliable across all
+  // browser print engines and Windows thermal printer drivers.
+  const fBase  = is58 ? "7pt"  : "9pt";
+  const fTitle = is58 ? "10pt" : "13pt";
+  const fTotal = is58 ? "9pt"  : "11pt";
+  const fFoot  = is58 ? "8pt"  : "10pt";
+  const pad    = is58 ? "1.5mm" : "3mm";
+
+  const bodyHTML = buildReceiptHTML(bill, settings);
   const css = [
-    `@page{size:${pageW} auto;margin:${margin}}`,
-    `*{box-sizing:border-box}`,
-    `body{font-family:'Courier New',Courier,monospace;width:${bodyW};margin:0;padding:0;font-size:${fBase};line-height:1.3;color:#000;overflow:hidden}`,
-    `.receipt{width:100%;overflow:hidden}`,
-    `.rh2{text-align:center;margin:0 0 2px;font-size:${fTitle};font-weight:bold;word-break:break-word;white-space:normal}`,
-    `.rp{text-align:center;margin:1px 0;word-break:break-word;font-size:${fBase};white-space:normal}`,
-    `.rhr{border:0;border-top:1px dashed #000;margin:3px 0}`,
-    `.rinfo{margin:1px 0;word-break:break-word;font-size:${fBase}}`,
-    `.rcols{display:flex;justify-content:space-between;font-size:${fBase};font-weight:bold;margin-bottom:2px}`,
-    `.ritem{margin-bottom:2px;width:100%}`,
-    `.ritem-name{word-break:break-word;font-size:${fBase};white-space:normal}`,
-    `.ritem-amt{text-align:right;font-size:${fBase}}`,
-    `.rtotal{display:flex;justify-content:space-between;font-weight:bold;font-size:${fTotal};margin:2px 0}`,
-    `.rcenter{text-align:center;word-break:break-word;font-size:${fBase}}`,
-    `.rfooter{text-align:center;font-weight:bold;font-size:${fFoot};margin-bottom:4px;word-break:break-word}`,
+    `@page{size:${pageW} auto;margin:0}`,
+    `*{box-sizing:border-box;margin:0;padding:0}`,
+    `html,body{width:100%;font-family:'Courier New',Courier,monospace;font-size:${fBase};line-height:1.35;color:#000}`,
+    `body{padding:${pad}}`,
+    `.receipt{width:100%}`,
+    `.rh2{text-align:center;font-size:${fTitle};font-weight:bold;word-wrap:break-word;margin-bottom:2pt}`,
+    `.rp{text-align:center;word-wrap:break-word;margin:0}`,
+    `.rhr{border:0;border-top:1pt dashed #000;margin:3pt 0;width:100%}`,
+    `.rtbl{width:100%;border-collapse:collapse}`,
+    `.rtbl td{padding:0;vertical-align:top;font-size:${fBase}}`,
+    `.rtbl .name{word-break:break-word;word-wrap:break-word}`,
+    `.rtbl .amt{text-align:right;white-space:nowrap;padding-left:4pt}`,
+    `.rtbl .ttl{font-weight:bold;font-size:${fTotal}}`,
+    `.rcenter{text-align:center;word-wrap:break-word}`,
+    `.rfooter{text-align:center;font-weight:bold;font-size:${fFoot};margin-top:2pt}`,
   ].join("");
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${bill.bill_no}</title><style>${css}</style></head><body>${bodyHTML}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}<\/script></body></html>`;
-  const w = window.open("", "_blank", "width=320,height=600");
+  const w = window.open("", "_blank", "width=300,height=600");
   if (!w) return alert("Please allow popups for printing.");
   w.document.write(html);
   w.document.close();
 }
 
-function buildReceiptHTML(bill, settings, is58) {
+function buildReceiptHTML(bill, settings) {
   const itemRows = (bill.items || []).map(x =>
-    `<div class="ritem"><div class="ritem-name">${x.item_name} x${x.quantity}</div><div class="ritem-amt">${money(x.amount)}</div></div>`
+    `<tr><td class="name">${x.item_name} x${x.quantity}</td><td class="amt">${money(x.amount)}</td></tr>`
   ).join("");
   return [
     `<div class="receipt">`,
@@ -358,13 +360,13 @@ function buildReceiptHTML(bill, settings, is58) {
     settings?.address ? `<div class="rp">${settings.address}</div>` : "",
     settings?.phone   ? `<div class="rp">Ph: ${settings.phone}</div>` : "",
     `<hr class="rhr"/>`,
-    `<div class="rinfo">Bill: ${bill.bill_no}</div>`,
-    `<div class="rinfo">${new Date(bill.created_at).toLocaleString()}</div>`,
+    `<div>Bill: ${bill.bill_no}</div>`,
+    `<div>${new Date(bill.created_at).toLocaleString()}</div>`,
     `<hr class="rhr"/>`,
-    `<div class="rcols"><span>ITEM</span><span>AMT</span></div>`,
-    itemRows,
+    `<table class="rtbl"><thead><tr><td class="name"><b>ITEM</b></td><td class="amt"><b>AMT</b></td></tr></thead>`,
+    `<tbody>${itemRows}</tbody></table>`,
     `<hr class="rhr"/>`,
-    `<div class="rtotal"><span>TOTAL</span><span>${money(bill.total)}</span></div>`,
+    `<table class="rtbl"><tr><td class="name ttl">TOTAL</td><td class="amt ttl">${money(bill.total)}</td></tr></table>`,
     `<div class="rcenter">Payment: ${bill.payment_method}</div>`,
     `<hr class="rhr"/>`,
     `<div class="rfooter">Thank You! Visit Again</div>`,
