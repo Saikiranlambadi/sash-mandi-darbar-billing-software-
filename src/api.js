@@ -8,49 +8,58 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const CATEGORY_IMAGE_MAP = {
-  1: "https://images.unsplash.com/photo-1633945274405-b6c8069047b0?auto=format&fit=crop&w=600&q=80", // Chicken Fry Mandi
-  2: "https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=600&q=80", // Chicken Broasted Mandi
-  3: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80", // Mutton Juicy Mandi
-  4: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80"  // Fish Fry Mandi
+  1: "/images/Chicken Fry Mandi (1 Piece).png",
+  2: "/images/Chicken Broasted Mandi.png",
+  3: "/images/Mutton Juicy Mandi.png",
+  4: "/images/Fish Fry Mandi Full.png"
+};
+
+const LOCAL_IMAGES = {
+  "Chicken Fry Mandi (1 Piece)": "/images/Chicken Fry Mandi (1 Piece).png",
+  "Chicken Fry Mandi (2 Piece)": "/images/Chicken Fry Mandi (2 Piece).png",
+  "Chicken Fry Mandi (3 Piece)": "/images/Chicken Fry Mandi (3 Piece).png",
+  "Chicken Fry Mandi (4 Piece)": "/images/Chicken Fry Mandi (4 Piece).png",
+  "Chicken Broasted Mandi (1 Piece)": "/images/Chicken Broasted Mandi.png",
+  "Chicken Broasted Mandi (2 Piece)": "/images/Chicken Broasted Mandi.png",
+  "Chicken Broasted Mandi (3 Piece)": "/images/Chicken Broasted Mandi.png",
+  "Chicken Broasted Mandi (4 Piece)": "/images/Chicken Broasted Mandi.png",
+  "Mutton Juicy Mandi (1 Piece)": "/images/Mutton Juicy Mandi.png",
+  "Mutton Juicy Mandi (2 Piece)": "/images/Mutton Juicy Mandi.png",
+  "Mutton Juicy Mandi (3 Piece)": "/images/Mutton Juicy Mandi.png",
+  "Mutton Juicy Mandi (4 Piece)": "/images/Mutton Juicy Mandi.png",
+  "Fish Fry Mandi Full (2 Person)": "/images/Fish Fry Mandi Full.png",
+  "Fish Fry Mandi Full (3 Person)": "/images/Fish Fry Mandi Full.png",
+  "Fish Fry Mandi Full (4 Person)": "/images/Fish Fry Mandi Full.png",
+  "Chicken Fry Extra Piece": "/images/Chicken Fry Extra Piece.png",
+  "Chicken Broasted Extra Piece": "/images/Chicken Broasted Extra Piece.png",
+  "Extra Mandi Rice": "/images/extra_mandi_rice.jpg",
+  "Mayonnaise": "/images/mayoness.png",
+  "Thumsup": "/images/thumsup.png",
+  "Water Bottle": "/images/water_bottle.jpg"
 };
 
 export function getItemImage(item) {
-  if (item && item.image && item.image.trim() !== "") {
+  const name = (item?.name || "");
+  
+  if (LOCAL_IMAGES[name]) {
+    return LOCAL_IMAGES[name];
+  }
+
+  const lowerName = name.toLowerCase();
+  if (lowerName.includes("chicken fry mandi") || lowerName.includes("chicken fry")) return LOCAL_IMAGES["Chicken Fry Mandi (1 Piece)"];
+  if (lowerName.includes("broast")) return LOCAL_IMAGES["Chicken Broasted Mandi (1 Piece)"];
+  if (lowerName.includes("mutton")) return LOCAL_IMAGES["Mutton Juicy Mandi (1 Piece)"];
+  if (lowerName.includes("fish")) return LOCAL_IMAGES["Fish Fry Mandi Full (2 Person)"];
+  if (lowerName.includes("mayo")) return LOCAL_IMAGES["Mayonnaise"];
+  if (lowerName.includes("rice")) return LOCAL_IMAGES["Extra Mandi Rice"];
+  if (lowerName.includes("thums")) return LOCAL_IMAGES["Thumsup"];
+  if (lowerName.includes("water")) return LOCAL_IMAGES["Water Bottle"];
+  
+  if (item && item.image && item.image.trim() !== "" && !item.image.includes("unsplash.com")) {
     return item.image;
   }
-  const name = (item?.name || "").toLowerCase();
-  const cat = (item?.category_name || "").toLowerCase();
-  const catId = Number(item?.category_id);
-
-  // Mandi items
-  if (catId === 2 || name.includes("broast") || cat.includes("broast")) {
-    return CATEGORY_IMAGE_MAP[2];
-  }
-  if (catId === 3 || name.includes("mutton") || name.includes("lamb") || cat.includes("mutton")) {
-    return CATEGORY_IMAGE_MAP[3];
-  }
-  if (catId === 4 || name.includes("fish") || cat.includes("fish")) {
-    return CATEGORY_IMAGE_MAP[4];
-  }
-  if (catId === 1 || name.includes("chicken fry mandi") || cat.includes("chicken fry mandi") || (name.includes("mandi") && name.includes("fry"))) {
-    return CATEGORY_IMAGE_MAP[1];
-  }
-
-  // General dish fallbacks
-  if (name.includes("biryani") || cat.includes("biryani")) {
-    return "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=600&q=80";
-  }
-  if (name.includes("tikka") || name.includes("manchurian") || name.includes("tandoori") || cat.includes("starter")) {
-    return "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?auto=format&fit=crop&w=600&q=80";
-  }
-  if (name.includes("curry") || name.includes("paneer") || cat.includes("curry")) {
-    return "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=600&q=80";
-  }
-  if (name.includes("naan") || name.includes("roti") || cat.includes("naan")) {
-    return "https://images.unsplash.com/photo-1626074353765-517a681e40be?auto=format&fit=crop&w=600&q=80";
-  }
-
-  return CATEGORY_IMAGE_MAP[1];
+  
+  return LOCAL_IMAGES["Chicken Fry Mandi (1 Piece)"];
 }
 
 const DEFAULT_ITEMS = [
