@@ -16,7 +16,7 @@ function App() {
     ["billing", "New Bill", Receipt],
     ["items", "Food Items", Utensils],
     ["categories", "Categories", Tags],
-    ["history", "Bill History", History],
+    ["history", "Bill history", History],
     ["reports", "Reports", BarChart3],
     ["settings", "Settings", Settings],
   ];
@@ -318,11 +318,11 @@ function printReceipt(bill, settings) {
   // so the printer paper edge is the boundary — not a CSS mm value.
   // Use HTML tables instead of flexbox — far more reliable across all
   // browser print engines and Windows thermal printer drivers.
-  const fBase  = is58 ? "7pt"  : "9pt";
+  const fBase = is58 ? "7pt" : "9pt";
   const fTitle = is58 ? "10pt" : "13pt";
-  const fTotal = is58 ? "9pt"  : "11pt";
-  const fFoot  = is58 ? "8pt"  : "10pt";
-  const pad    = is58 ? "1.5mm" : "3mm";
+  const fTotal = is58 ? "9pt" : "11pt";
+  const fFoot = is58 ? "8pt" : "10pt";
+  const pad = is58 ? "1.5mm" : "3mm";
 
   const bodyHTML = buildReceiptHTML(bill, settings);
   const css = [
@@ -358,7 +358,7 @@ function buildReceiptHTML(bill, settings) {
     `<div class="receipt">`,
     `<div class="rh2">${settings?.restaurant_name || "SASH MANDI DARBAR"}</div>`,
     settings?.address ? `<div class="rp">${settings.address}</div>` : "",
-    settings?.phone   ? `<div class="rp">Ph: ${settings.phone}</div>` : "",
+    settings?.phone ? `<div class="rp">Ph: ${settings.phone}</div>` : "",
     `<hr class="rhr"/>`,
     `<div>Bill: ${bill.bill_no}</div>`,
     `<div>${new Date(bill.created_at).toLocaleString()}</div>`,
