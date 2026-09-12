@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Receipt, Utensils, Tags, History, BarChart3,
   Settings, Plus, Minus, Trash2, Printer, Search,
-  Pencil, Save, X, Menu, CreditCard
+  Pencil, Save, X, Menu, CreditCard, Moon, Sun
 } from "lucide-react";
 import { api } from "./api";
 
@@ -11,6 +11,13 @@ const money = n => `₹${Number(n || 0).toFixed(2)}`;
 function App() {
   const [page, setPage] = useState("billing");
   const [mobile, setMobile] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  
+  useEffect(() => {
+    localStorage.setItem("theme", theme);
+    if (theme === "dark") document.body.classList.add("dark");
+    else document.body.classList.remove("dark");
+  }, [theme]);
   const nav = [
     ["dashboard", "Dashboard", LayoutDashboard],
     ["billing", "New Bill", Receipt],
@@ -30,7 +37,12 @@ function App() {
       <header className="topbar">
         <button className="icon-btn mobile-menu" onClick={() => setMobile(true)}><Menu /></button>
         <div><h2>{nav.find(x => x[0] === page)?.[1]}</h2><span>{new Date().toLocaleDateString()}</span></div>
-        <button className="avatar">N</button>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <button className="icon-btn" style={{ padding: "8px", borderRadius: "50%", display: "flex", background: theme === 'dark' ? '#374151' : '#f1f5f9', color: theme === 'dark' ? '#facc15' : '#475569' }} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          <button className="avatar">N</button>
+        </div>
       </header>
       <div className="content">
         {page === "dashboard" && <Dashboard go={setPage} />}
