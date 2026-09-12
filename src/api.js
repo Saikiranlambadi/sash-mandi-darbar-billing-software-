@@ -35,7 +35,8 @@ const LOCAL_IMAGES = {
   "Extra Mandi Rice": "/images/extra_mandi_rice.jpg",
   "Mayonnaise": "/images/mayoness.png",
   "Thumsup": "/images/thumsup.png",
-  "Water Bottle": "/images/water_bottle.jpg"
+  "Water Bottle": "/images/water_bottle.jpg",
+  "Sweet Basundi": "/images/basundi.png"
 };
 
 export function getItemImage(item) {
@@ -54,6 +55,7 @@ export function getItemImage(item) {
   if (lowerName.includes("rice")) return LOCAL_IMAGES["Extra Mandi Rice"];
   if (lowerName.includes("thums")) return LOCAL_IMAGES["Thumsup"];
   if (lowerName.includes("water")) return LOCAL_IMAGES["Water Bottle"];
+  if (lowerName.includes("basundi")) return LOCAL_IMAGES["Sweet Basundi"];
   
   if (item && item.image && item.image.trim() !== "" && !item.image.includes("unsplash.com")) {
     return item.image;
