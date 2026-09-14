@@ -120,11 +120,15 @@ function setStorage(key, value) {
     setStorage("rb_categories", mergedCats);
   }
 
+  const ITEMS_VER = 2; // Bump this to force price/image updates from code
   const currentItems = getStorage("rb_items", []);
-  const hasMandiItems = currentItems.some(i => i.name && i.name.toLowerCase().includes("mandi"));
-  if (!currentItems.length || !hasMandiItems) {
+  const currentItemsVer = getStorage("rb_items_ver", 0);
+  
+  if (!currentItems.length || currentItemsVer < ITEMS_VER) {
     const mergedItems = [...DEFAULT_ITEMS];
     let maxId = mergedItems.length ? Math.max(...mergedItems.map(x => x.id)) : 0;
+    
+    // Retain any custom items the user added manually
     currentItems.forEach(item => {
       if (!mergedItems.some(mi => mi.name.toLowerCase() === item.name.toLowerCase())) {
         maxId += 1;
@@ -132,6 +136,7 @@ function setStorage(key, value) {
       }
     });
     setStorage("rb_items", mergedItems);
+    setStorage("rb_items_ver", ITEMS_VER);
   }
 
   // SETTINGS VERSION: bump this number whenever restaurant details change.
