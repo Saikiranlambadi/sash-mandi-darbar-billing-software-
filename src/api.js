@@ -127,16 +127,12 @@ function setStorage(key, value) {
 
 // Seed / Migrate initial data
 (() => {
-  const currentCats = getStorage("rb_categories", []);
-  const hasMandiCats = currentCats.some(c => c.name && c.name.toLowerCase().includes("mandi"));
-  if (!currentCats.length || !hasMandiCats) {
-    const mergedCats = [...DEFAULT_CATEGORIES];
-    currentCats.forEach(c => {
-      if (!mergedCats.some(mc => mc.name.toLowerCase() === c.name.toLowerCase())) {
-        mergedCats.push(c);
-      }
-    });
-    setStorage("rb_categories", mergedCats);
+  const CATS_VER = 2; // bump to force-reset old categories
+  const currentCatsVer = getStorage("rb_categories_ver", 0);
+  if (currentCatsVer < CATS_VER) {
+    // Hard reset: only keep DEFAULT_CATEGORIES, drop old stale ones
+    setStorage("rb_categories", DEFAULT_CATEGORIES);
+    setStorage("rb_categories_ver", CATS_VER);
   }
 
   const ITEMS_VER = 2;
