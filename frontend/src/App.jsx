@@ -4,7 +4,7 @@ import {
   Settings, Plus, Minus, Trash2, Printer, Search,
   Pencil, Save, X, Menu, CreditCard, Moon, Sun, Cloud, RefreshCw, CheckCircle2
 } from "lucide-react";
-import { api } from "./api";
+import { api, getItemImage } from "./api";
 
 const money = n => `₹${Number(n || 0).toFixed(2)}`;
 
@@ -234,7 +234,7 @@ function Billing() {
               )}
             </div>
           ) : (
-            filtered.map(x => <button className="product-card" key={x.id} onClick={() => add(x)}><img className="product-image" src={x.image} alt={x.name} /><div className="product-name">{x.name}</div><div className="product-price">₹{Number(x.price).toFixed(2)}</div></button>)
+            filtered.map(x => <button className="product-card" key={x.id} onClick={() => add(x)}><img className="product-image" src={getItemImage(x)} alt={x.name} onError={e => { e.target.onerror = null; e.target.src = getItemImage({ name: x.name }); }} /><div className="product-name">{x.name}</div><div className="product-price">₹{Number(x.price).toFixed(2)}</div></button>)
           )}
         </div>
       </section>
