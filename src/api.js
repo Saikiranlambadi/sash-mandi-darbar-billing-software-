@@ -46,7 +46,12 @@ const LOCAL_IMAGES = {
   "Mayonnaise": "/images/mayoness.png",
   "Thumsup": "/images/thumsup.png",
   "Water Bottle": "/images/water_bottle.jpg",
-  "Sweet Basundi": "/images/basundi.png"
+  "Sweet Basundi": "/images/basundi.png",
+  // New images
+  "Chicken Biryani": "/images/chicken_biryani.jpg",
+  "Shawarma": "/images/shawarma.jpg",
+  "Sweets": "/images/sweets.jpg",
+  "Drinks": "/images/drinks.jpg"
 };
 
 export function getItemImage(item) {
@@ -66,6 +71,10 @@ export function getItemImage(item) {
   if (lowerName.includes("thums")) return LOCAL_IMAGES["Thumsup"];
   if (lowerName.includes("water")) return LOCAL_IMAGES["Water Bottle"];
   if (lowerName.includes("basundi")) return LOCAL_IMAGES["Sweet Basundi"];
+  if (lowerName.includes("biryani")) return LOCAL_IMAGES["Chicken Biryani"];
+  if (lowerName.includes("shawarma")) return LOCAL_IMAGES["Shawarma"];
+  if (lowerName.includes("sweet") || lowerName.includes("dessert") || lowerName.includes("gulab") || lowerName.includes("ladoo") || lowerName.includes("barfi") || lowerName.includes("jalebi")) return LOCAL_IMAGES["Sweets"];
+  if (lowerName.includes("drink") || lowerName.includes("pepsi") || lowerName.includes("juice") || lowerName.includes("soda") || lowerName.includes("cola") || lowerName.includes("beverage")) return LOCAL_IMAGES["Drinks"];
 
   if (item && item.image && item.image.trim() !== "" && !item.image.includes("unsplash.com")) {
     return item.image;
