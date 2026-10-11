@@ -524,19 +524,6 @@ export const api = {
 export default api;
 const PRINTER_URL = "http://localhost:9100";
 
-export type OrderItem = {
-  name: string;
-  quantity: number;
-  notes?: string;
-};
-
-export type KitchenOrder = {
-  orderNumber: string;
-  orderType: "Dine-in" | "Takeaway" | "Delivery";
-  tableNumber?: string;
-  items: OrderItem[];
-};
-
 export async function checkPrinter() {
   const response = await fetch(`${PRINTER_URL}/health`, {
     method: "GET",
@@ -551,7 +538,7 @@ export async function checkPrinter() {
   return response.json();
 }
 
-export async function printKitchenOrder(order: KitchenOrder) {
+export async function printKitchenOrder(order) {
   const content = [
     {
       type: "text",
