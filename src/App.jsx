@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Receipt, Utensils, Tags, History, BarChart3,
   Settings, Plus, Minus, Trash2, Printer, Search,
-  Pencil, Save, X, Menu, CreditCard, Moon, Sun
+  Pencil, Save, X, Menu, CreditCard, Moon, Sun, Cloud, RefreshCw, CheckCircle2
 } from "lucide-react";
 import { api } from "./api";
 
@@ -38,9 +38,24 @@ function App() {
         <button className="icon-btn mobile-menu" onClick={() => setMobile(true)}><Menu /></button>
         <div><h2>{nav.find(x => x[0] === page)?.[1]}</h2><span>{new Date().toLocaleDateString()}</span></div>
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button className="icon-btn" style={{ padding: "8px", borderRadius: "50%", display: "flex", background: theme === 'dark' ? '#374151' : '#f1f5f9', color: theme === 'dark' ? '#facc15' : '#475569' }} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="theme-toggle-pill">
+            <button
+              type="button"
+              className={`theme-toggle-btn light-btn ${theme === "light" ? "active" : ""}`}
+              onClick={() => setTheme("light")}
+            >
+              <Sun size={15} />
+              <span>Light</span>
+            </button>
+            <button
+              type="button"
+              className={`theme-toggle-btn dark-btn ${theme === "dark" ? "active" : ""}`}
+              onClick={() => setTheme("dark")}
+            >
+              <Moon size={15} />
+              <span>Dark</span>
+            </button>
+          </div>
           <button className="avatar">N</button>
         </div>
       </header>
@@ -59,7 +74,12 @@ function App() {
 
 function Dashboard({ go }) {
   const [data, setData] = useState(null);
-  useEffect(() => { api.daily().then(setData) }, []);
+  const load = () => api.daily().then(setData);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   return <div>
     <div className="welcome"><div><h1>Good morning 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
     <div className="stats">
@@ -115,7 +135,15 @@ function Billing() {
     });
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    window.addEventListener("rb_items_synced", loadData);
+    window.addEventListener("rb_categories_synced", loadData);
+    return () => {
+      window.removeEventListener("rb_items_synced", loadData);
+      window.removeEventListener("rb_categories_synced", loadData);
+    };
+  }, []);
 
   const filtered = useMemo(() => items.filter(x => {
     const matchCat = !cat || cat === "All" || x.category_name === cat || String(x.category_id) === String(cat);
@@ -215,7 +243,11 @@ function Billing() {
 function Items() {
   const [items, setItems] = useState([]), [cats, setCats] = useState([]), [editing, setEditing] = useState(null), [show, setShow] = useState(false), [search, setSearch] = useState("");
   const load = () => Promise.all([api.items(), api.categories()]).then(([i, c]) => { setItems(i); setCats(c) });
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_items_synced", load);
+    return () => window.removeEventListener("rb_items_synced", load);
+  }, []);
   const save = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -239,7 +271,12 @@ function Items() {
 
 function Categories() {
   const [cats, setCats] = useState([]), [name, setName] = useState(""), [editing, setEditing] = useState(null);
-  const load = () => api.categories().then(setCats); useEffect(load, []);
+  const load = () => api.categories().then(setCats);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_categories_synced", load);
+    return () => window.removeEventListener("rb_categories_synced", load);
+  }, []);
   async function save() { if (!name.trim()) return; if (editing) await api.editCategory(editing.id, name); else await api.addCategory(name); setName(""); setEditing(null); load() }
   return <div><div className="panel category-add"><div><h3>{editing ? "Edit Category" : "Add Category"}</h3><p>Create menu categories.</p></div><div className="inline-form"><input placeholder="Category name" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} /><button className="primary" onClick={save}><Plus size={17} />{editing ? "Update" : "Add"}</button>{editing && <button className="secondary" onClick={() => { setEditing(null); setName("") }}><X size={17} /></button>}</div></div>
     <div className="category-grid">{cats.map(c => <div className="category-card" key={c.id}><span>🏷️</span><div><b>{c.name}</b><small>Menu category</small></div><div className="actions"><button onClick={() => { setEditing(c); setName(c.name) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete category?")) { await api.deleteCategory(c.id); load() } }}><Trash2 size={16} /></button></div></div>)}</div></div>
@@ -247,7 +284,12 @@ function Categories() {
 
 function HistoryPage() {
   const [bills, setBills] = useState([]), [search, setSearch] = useState(""), [selected, setSelected] = useState(null);
-  const load = () => api.bills().then(setBills); useEffect(load, []);
+  const load = () => api.bills().then(setBills);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   const list = bills.filter(x => x.bill_no.toLowerCase().includes(search.toLowerCase()));
   return <div><Toolbar title="Bill History" search={search} setSearch={setSearch} />
     <div className="panel table-wrap"><table><thead><tr><th>Bill No.</th><th>Date & Time</th><th>Payment</th><th>Amount</th><th>Action</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><b>{x.bill_no}</b></td><td>{new Date(x.created_at).toLocaleString()}</td><td>{x.payment_method}</td><td>{money(x.total)}</td><td><button className="view-btn" onClick={async () => setSelected(await api.bill(x.id))}>View / Reprint</button></td></tr>)}</tbody></table></div>
@@ -257,7 +299,13 @@ function HistoryPage() {
 function BillModal({ bill, onClose }) { const [s, setS] = useState(null); useEffect(() => api.settings().then(setS), []); return <Modal title={`Bill ${bill.bill_no}`} onClose={onClose}><div className="receipt-preview"><ReceiptContent bill={bill} settings={s} /></div><button className="primary full" onClick={() => printReceipt(bill, s)}><Printer size={17} /> Reprint Bill</button></Modal> }
 
 function Reports() {
-  const [data, setData] = useState(null); useEffect(() => { api.daily().then(setData) }, []);
+  const [data, setData] = useState(null);
+  const load = () => api.daily().then(setData);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   return <div><div className="report-header"><div><h1>Today's Report</h1><p>Sales summary for today.</p></div><button className="secondary" onClick={() => window.print()}>Print Report</button></div><div className="stats"><Stat title="Total Sales" value={money(data?.summary.total)} icon="₹" /><Stat title="Bills" value={data?.summary.bills || 0} icon="🧾" /><Stat title="Cash" value={money(data?.summary.cash)} icon="💵" /><Stat title="UPI" value={money(data?.summary.upi)} icon="📱" /></div><div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead><tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div></div></div>
 }
 
@@ -265,9 +313,56 @@ function SettingsPage() {
   const [form, setForm] = useState(null);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearPassword, setClearPassword] = useState("");
+  const [firebaseInput, setFirebaseInput] = useState(() => {
+    const cfg = api.getFirebaseConfig();
+    return cfg ? JSON.stringify(cfg, null, 2) : "";
+  });
+  const [syncing, setSyncing] = useState(false);
+  const [isCloud, setIsCloud] = useState(() => api.isCloudSyncEnabled());
+
   useEffect(() => api.settings().then(setForm), []);
   if (!form) return <div className="loading">Loading...</div>;
+
   const save = async e => { e.preventDefault(); await api.saveSettings(form); alert("Settings saved") };
+
+  const handleSaveFirebase = async () => {
+    try {
+      if (!firebaseInput.trim()) {
+        api.saveFirebaseConfig(null);
+        setIsCloud(false);
+        alert("Cloud sync disabled. Operating in local storage mode.");
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(firebaseInput);
+      } catch {
+        throw new Error("Invalid JSON format. Please paste the Firebase config object.");
+      }
+      if (!parsed.apiKey || !parsed.projectId) {
+        throw new Error("Missing apiKey or projectId in Firebase configuration.");
+      }
+      api.saveFirebaseConfig(parsed);
+      api.setupRealtimeSync();
+      setIsCloud(true);
+      alert("✅ Connected to Firebase Cloud! Multi-device real-time sync is now ACTIVE.");
+    } catch (err) {
+      alert("Configuration Error: " + err.message);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncAllToCloud();
+      alert(`✅ Cloud Sync Complete!\n${res.billsSynced} bills and ${res.itemsSynced} menu items synced to the Cloud.\nAll mobile phones can now see this data without missing anything!`);
+    } catch (err) {
+      alert("Sync failed: " + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleClearData = async () => {
     if (!clearPassword) { return alert("Please enter password"); }
     try {
@@ -279,7 +374,82 @@ function SettingsPage() {
       alert("Error: " + e.message);
     }
   };
-  return <div className="settings-grid"><form className="panel form" onSubmit={save}><div><h3>Restaurant Information</h3><p>These details appear on printed receipts.</p></div><label>Restaurant Name<input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} /></label><label>Address<textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></label><label>Phone<input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label><label>Paper Size<select value={form.paper_size} onChange={e => setForm({ ...form, paper_size: e.target.value })}><option>80mm</option><option>58mm</option></select></label><button className="primary"><Save size={17} /> Save Settings</button></form><div className="panel"><h3>Printer Setup</h3><p>Install the thermal printer in Windows first.</p><div className="printer-box"><Printer size={38} /><b>Thermal Printer</b><span>Use an ESC/POS-compatible printer.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div></div><div className="panel"><h3>Danger Zone</h3><p>Clear all orders and bills data.</p><button className="secondary danger" onClick={() => setShowClearModal(true)}>Clear All Data</button></div>{showClearModal && <Modal title="Clear All Data" onClose={() => { setShowClearModal(false); setClearPassword("") }}><form onSubmit={e => { e.preventDefault(); handleClearData() }} className="form"><p style={{ color: "#d32f2f", fontWeight: "bold" }}>⚠️ This will permanently delete all orders and bills. This cannot be undone!</p><label>Enter Password to Confirm<input type="password" placeholder="Enter password" value={clearPassword} onChange={e => setClearPassword(e.target.value)} required autoFocus /></label><div className="action-row"><button type="button" className="secondary" onClick={() => { setShowClearModal(false); setClearPassword("") }}>Cancel</button><button type="submit" className="secondary danger">Clear All Data</button></div></form></Modal>}</div>
+
+  return <div className="settings-grid">
+    <div className="panel" style={{ gridColumn: "1 / -1" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
+        <div>
+          <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+            <Cloud size={22} color="#2563eb" /> Multi-Phone Real-Time Cloud Sync
+          </h3>
+          <p style={{ margin: "4px 0 0", color: "#64748b" }}>
+            Allows every phone in your restaurant to create and view bills live without missing any data.
+          </p>
+        </div>
+        <span className={`badge ${isCloud ? "success" : ""}`} style={{ fontSize: "14px", padding: "6px 14px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+          {isCloud ? "🟢 Cloud Sync Active" : "🟡 Local Mode (Single Phone)"}
+        </span>
+      </div>
+
+      <div style={{ background: isCloud ? "#f0fdf4" : "#f8fafc", border: `1px solid ${isCloud ? "#bbf7d0" : "#e2e8f0"}`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ fontWeight: 600, color: isCloud ? "#166534" : "#334155", marginBottom: "8px" }}>
+          {isCloud ? "✅ All connected mobile devices sync bills automatically in real time." : "ℹ️ How to sync across multiple phones:"}
+        </div>
+        {!isCloud && (
+          <ol style={{ margin: "0 0 12px 20px", padding: 0, fontSize: "13px", color: "#475569", lineHeight: "1.6" }}>
+            <li>Open <b><a href="https://console.firebase.google.com" target="_blank" rel="noreferrer">console.firebase.google.com</a></b> (Free Spark plan).</li>
+            <li>Create a Project &gt; Click <b>Web (&lt;/&gt;)</b> to get your Firebase Config.</li>
+            <li>Go to <b>Firestore Database</b> &gt; Create Database (Start in test mode).</li>
+            <li>Paste your Firebase Web Config JSON below and click <b>Save &amp; Connect Cloud</b>.</li>
+          </ol>
+        )}
+        <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+          Firebase Web Config JSON:
+        </label>
+        <textarea
+          value={firebaseInput}
+          onChange={e => setFirebaseInput(e.target.value)}
+          placeholder={`{\n  "apiKey": "AIzaSy...",\n  "projectId": "mandi-pos-...",\n  "authDomain": "...",\n  "storageBucket": "...",\n  "appId": "..."\n}`}
+          rows={5}
+          style={{ width: "100%", fontFamily: "monospace", fontSize: "12px", borderRadius: "8px", border: "1px solid #cbd5e1", padding: "10px", background: "#fff", boxSizing: "border-box" }}
+        />
+        <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
+          <button type="button" className="primary" onClick={handleSaveFirebase}>
+            <Save size={16} /> Save &amp; Connect Cloud
+          </button>
+          {isCloud && (
+            <button type="button" className="secondary" onClick={handleSyncAll} disabled={syncing}>
+              <RefreshCw size={16} /> {syncing ? "Syncing..." : "Sync All Local Data to Cloud"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <form className="panel form" onSubmit={save}>
+      <div><h3>Restaurant Information</h3><p>These details appear on printed receipts.</p></div>
+      <label>Restaurant Name<input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} /></label>
+      <label>Address<textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+      <label>Phone<input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
+      <label>Paper Size<select value={form.paper_size} onChange={e => setForm({ ...form, paper_size: e.target.value })}><option>80mm</option><option>58mm</option></select></label>
+      <button className="primary"><Save size={17} /> Save Settings</button>
+    </form>
+    <div className="panel">
+      <h3>Printer Setup</h3><p>Install the thermal printer in Windows first.</p>
+      <div className="printer-box"><Printer size={38} /><b>Thermal Printer</b><span>Use an ESC/POS-compatible printer.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div>
+    </div>
+    <div className="panel">
+      <h3>Danger Zone</h3><p>Clear all orders and bills data.</p>
+      <button className="secondary danger" onClick={() => setShowClearModal(true)}>Clear All Data</button>
+    </div>
+    {showClearModal && <Modal title="Clear All Data" onClose={() => { setShowClearModal(false); setClearPassword("") }}>
+      <form onSubmit={e => { e.preventDefault(); handleClearData() }} className="form">
+        <p style={{ color: "#d32f2f", fontWeight: "bold" }}>⚠️ This will permanently delete all orders and bills. This cannot be undone!</p>
+        <label>Enter Password to Confirm<input type="password" placeholder="Enter password" value={clearPassword} onChange={e => setClearPassword(e.target.value)} required autoFocus /></label>
+        <div className="action-row"><button type="button" className="secondary" onClick={() => { setShowClearModal(false); setClearPassword("") }}>Cancel</button><button type="submit" className="secondary danger">Clear All Data</button></div>
+      </form>
+    </Modal>}
+  </div>;
 }
 
 function Toolbar({ title, search, setSearch, action, label }) { return <div className="toolbar"><div><h1>{title}</h1><p>Manage your restaurant data.</p></div><div className="toolbar-actions">{search !== undefined && <div className="search"><Search size={18} /><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>}{action && <button className="primary" onClick={action}><Plus size={18} />{label}</button>}</div></div> }

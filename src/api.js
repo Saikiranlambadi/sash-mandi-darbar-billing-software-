@@ -1,4 +1,14 @@
-// Client-side LocalStorage API wrapper for Restaurant Billing POS
+// Client-side & Cloud Sync API wrapper for Restaurant Billing POS
+import {
+  getDb,
+  isCloudSyncEnabled,
+  subscribeCollection,
+  uploadDoc,
+  removeDoc,
+  fetchCollection,
+  getFirebaseConfig,
+  saveFirebaseConfig
+} from "./firebase";
 
 const DEFAULT_CATEGORIES = [
   { id: 1, name: "Chicken Fry Mandi" },
@@ -41,7 +51,7 @@ const LOCAL_IMAGES = {
 
 export function getItemImage(item) {
   const name = (item?.name || "");
-  
+
   if (LOCAL_IMAGES[name]) {
     return LOCAL_IMAGES[name];
   }
@@ -56,11 +66,11 @@ export function getItemImage(item) {
   if (lowerName.includes("thums")) return LOCAL_IMAGES["Thumsup"];
   if (lowerName.includes("water")) return LOCAL_IMAGES["Water Bottle"];
   if (lowerName.includes("basundi")) return LOCAL_IMAGES["Sweet Basundi"];
-  
+
   if (item && item.image && item.image.trim() !== "" && !item.image.includes("unsplash.com")) {
     return item.image;
   }
-  
+
   return LOCAL_IMAGES["Chicken Fry Mandi (1 Piece)"];
 }
 
@@ -106,7 +116,7 @@ function setStorage(key, value) {
   }
 }
 
-// Seed / Migrate initial data to ensure Mandi categories and items are present
+// Seed / Migrate initial data
 (() => {
   const currentCats = getStorage("rb_categories", []);
   const hasMandiCats = currentCats.some(c => c.name && c.name.toLowerCase().includes("mandi"));
@@ -120,15 +130,14 @@ function setStorage(key, value) {
     setStorage("rb_categories", mergedCats);
   }
 
-  const ITEMS_VER = 2; // Bump this to force price/image updates from code
+  const ITEMS_VER = 2;
   const currentItems = getStorage("rb_items", []);
   const currentItemsVer = getStorage("rb_items_ver", 0);
-  
+
   if (!currentItems.length || currentItemsVer < ITEMS_VER) {
     const mergedItems = [...DEFAULT_ITEMS];
     let maxId = mergedItems.length ? Math.max(...mergedItems.map(x => x.id)) : 0;
-    
-    // Retain any custom items the user added manually
+
     currentItems.forEach(item => {
       if (!mergedItems.some(mi => mi.name.toLowerCase() === item.name.toLowerCase())) {
         maxId += 1;
@@ -139,18 +148,16 @@ function setStorage(key, value) {
     setStorage("rb_items_ver", ITEMS_VER);
   }
 
-  // SETTINGS VERSION: bump this number whenever restaurant details change.
-  // On mismatch, name/address/phone are force-written (paper_size is preserved).
   const SETTINGS_VER = 2;
   const existingSettings = getStorage("rb_settings", {});
   if ((existingSettings._ver || 0) < SETTINGS_VER) {
     const updated = {
       ...existingSettings,
       restaurant_name: DEFAULT_SETTINGS.restaurant_name,
-      address:         DEFAULT_SETTINGS.address,
-      phone:           DEFAULT_SETTINGS.phone,
-      paper_size:      existingSettings.paper_size || DEFAULT_SETTINGS.paper_size,
-      _ver:            SETTINGS_VER,
+      address: DEFAULT_SETTINGS.address,
+      phone: DEFAULT_SETTINGS.phone,
+      paper_size: existingSettings.paper_size || DEFAULT_SETTINGS.paper_size,
+      _ver: SETTINGS_VER,
     };
     setStorage("rb_settings", updated);
   }
@@ -158,6 +165,66 @@ function setStorage(key, value) {
     setStorage("rb_bills", []);
   }
 })();
+
+// Real-Time Sync Subscriptions
+let unsubs = [];
+
+export function setupRealtimeSync() {
+  // Clear previous subscriptions
+  unsubs.forEach(unsub => unsub && unsub());
+  unsubs = [];
+
+  if (!isCloudSyncEnabled()) return;
+
+  // 1. Sync Bills in Real-Time
+  const billsUnsub = subscribeCollection("bills", (remoteBills) => {
+    if (!remoteBills) return;
+    const localBills = getStorage("rb_bills", []);
+    const map = new Map();
+
+    // Preserve local and merge remote
+    localBills.forEach(b => { if (b.bill_no) map.set(b.bill_no, b); });
+    remoteBills.forEach(b => { if (b.bill_no) map.set(b.bill_no, { ...map.get(b.bill_no), ...b }); });
+
+    const merged = Array.from(map.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    setStorage("rb_bills", merged);
+    window.dispatchEvent(new CustomEvent("rb_bills_synced", { detail: merged }));
+  }, "created_at", "desc");
+  unsubs.push(billsUnsub);
+
+  // 2. Sync Food Items in Real-Time
+  const itemsUnsub = subscribeCollection("items", (remoteItems) => {
+    if (!remoteItems || !remoteItems.length) return;
+    const localItems = getStorage("rb_items", []);
+    const map = new Map();
+
+    localItems.forEach(i => map.set(String(i.id), i));
+    remoteItems.forEach(i => map.set(String(i.id), { ...map.get(String(i.id)), ...i }));
+
+    const merged = Array.from(map.values());
+    setStorage("rb_items", merged);
+    window.dispatchEvent(new CustomEvent("rb_items_synced", { detail: merged }));
+  });
+  unsubs.push(itemsUnsub);
+
+  // 3. Sync Categories in Real-Time
+  const catsUnsub = subscribeCollection("categories", (remoteCats) => {
+    if (!remoteCats || !remoteCats.length) return;
+    const localCats = getStorage("rb_categories", []);
+    const map = new Map();
+
+    localCats.forEach(c => map.set(String(c.id), c));
+    remoteCats.forEach(c => map.set(String(c.id), { ...map.get(String(c.id)), ...c }));
+
+    const merged = Array.from(map.values());
+    setStorage("rb_categories", merged);
+    window.dispatchEvent(new CustomEvent("rb_categories_synced", { detail: merged }));
+  });
+  unsubs.push(catsUnsub);
+}
+
+// Start listeners immediately
+setupRealtimeSync();
 
 // Categories
 export async function getCategories() {
@@ -170,6 +237,10 @@ export async function addCategory(name) {
   const newCat = { id: nextId, name: name.trim() };
   categories.push(newCat);
   setStorage("rb_categories", categories);
+
+  if (isCloudSyncEnabled()) {
+    uploadDoc("categories", newCat.id, newCat);
+  }
   return newCat;
 }
 
@@ -179,6 +250,9 @@ export async function editCategory(id, name) {
   if (idx !== -1) {
     categories[idx].name = name.trim();
     setStorage("rb_categories", categories);
+    if (isCloudSyncEnabled()) {
+      uploadDoc("categories", categories[idx].id, categories[idx]);
+    }
   }
   return categories[idx];
 }
@@ -187,6 +261,10 @@ export async function deleteCategory(id) {
   let categories = await getCategories();
   categories = categories.filter(c => String(c.id) !== String(id));
   setStorage("rb_categories", categories);
+
+  if (isCloudSyncEnabled()) {
+    removeDoc("categories", id);
+  }
   return { ok: true };
 }
 
@@ -220,6 +298,10 @@ export async function addItem(data) {
   };
   items.push(newItem);
   setStorage("rb_items", items);
+
+  if (isCloudSyncEnabled()) {
+    uploadDoc("items", newItem.id, newItem);
+  }
   return newItem;
 }
 
@@ -236,6 +318,10 @@ export async function editItem(id, data) {
       image: data.image !== undefined ? data.image : items[idx].image
     };
     setStorage("rb_items", items);
+
+    if (isCloudSyncEnabled()) {
+      uploadDoc("items", items[idx].id, items[idx]);
+    }
   }
   return items[idx];
 }
@@ -244,18 +330,21 @@ export async function deleteItem(id) {
   let items = getStorage("rb_items", DEFAULT_ITEMS);
   items = items.filter(i => String(i.id) !== String(id));
   setStorage("rb_items", items);
+
+  if (isCloudSyncEnabled()) {
+    removeDoc("items", id);
+  }
   return { ok: true };
 }
 
 // Restaurant settings
 export async function getSettings() {
   const saved = getStorage("rb_settings", DEFAULT_SETTINGS);
-  // Always enforce the real restaurant details — paper_size comes from user preference
   return {
     ...saved,
     restaurant_name: DEFAULT_SETTINGS.restaurant_name,
-    address:         DEFAULT_SETTINGS.address,
-    phone:           DEFAULT_SETTINGS.phone,
+    address: DEFAULT_SETTINGS.address,
+    phone: DEFAULT_SETTINGS.phone,
   };
 }
 
@@ -263,6 +352,10 @@ export async function saveSettings(data) {
   const current = await getSettings();
   const updated = { ...current, ...data };
   setStorage("rb_settings", updated);
+
+  if (isCloudSyncEnabled()) {
+    uploadDoc("settings", "general", updated);
+  }
   return updated;
 }
 
@@ -271,9 +364,9 @@ export async function createBill(data) {
   const bills = getStorage("rb_bills", []);
   const stamp = Date.now().toString(36).toUpperCase();
   const bill_no = `B${stamp}`;
-  
+
   const total = (data.items || []).reduce((acc, item) => acc + (item.price * item.quantity), 0);
-  
+
   const billItems = (data.items || []).map(item => ({
     item_id: item.id,
     item_name: item.name,
@@ -296,6 +389,12 @@ export async function createBill(data) {
 
   bills.unshift(newBill);
   setStorage("rb_bills", bills);
+
+  // Instantly upload to Cloud so all other mobile devices receive it in real-time
+  if (isCloudSyncEnabled()) {
+    uploadDoc("bills", newBill.bill_no, newBill);
+  }
+
   return newBill;
 }
 
@@ -307,7 +406,7 @@ export async function getBills() {
 // Get single bill
 export async function getBill(id) {
   const bills = await getBills();
-  const bill = bills.find(b => String(b.id) === String(id));
+  const bill = bills.find(b => String(b.id) === String(id) || String(b.bill_no) === String(id));
   if (!bill) throw new Error("Bill not found");
   return bill;
 }
@@ -315,8 +414,13 @@ export async function getBill(id) {
 // Delete bill
 export async function deleteBill(id) {
   let bills = await getBills();
-  bills = bills.filter(b => String(b.id) !== String(id));
+  const target = bills.find(b => String(b.id) === String(id) || String(b.bill_no) === String(id));
+  bills = bills.filter(b => String(b.id) !== String(id) && String(b.bill_no) !== String(id));
   setStorage("rb_bills", bills);
+
+  if (isCloudSyncEnabled() && target?.bill_no) {
+    removeDoc("bills", target.bill_no);
+  }
   return { ok: true };
 }
 
@@ -324,7 +428,7 @@ export async function deleteBill(id) {
 export async function getSalesReport() {
   const bills = await getBills();
   const todayStr = new Date().toISOString().slice(0, 10);
-  
+
   const todayBills = bills.filter(b => b.created_at && b.created_at.slice(0, 10) === todayStr);
 
   const summary = {
@@ -359,8 +463,38 @@ export async function getSalesReport() {
 
 // Clear Data
 export async function clearData(password) {
+  const bills = getStorage("rb_bills", []);
   setStorage("rb_bills", []);
+
+  if (isCloudSyncEnabled()) {
+    bills.forEach(b => {
+      if (b.bill_no) removeDoc("bills", b.bill_no);
+    });
+  }
   return { ok: true, message: "All data cleared successfully" };
+}
+
+// Push all current local data up to Cloud to guarantee nothing is missed
+export async function syncAllToCloud() {
+  if (!isCloudSyncEnabled()) {
+    throw new Error("Cloud Sync is not configured yet. Please configure Firebase credentials first.");
+  }
+
+  const bills = getStorage("rb_bills", []);
+  const items = getStorage("rb_items", DEFAULT_ITEMS);
+  const categories = getStorage("rb_categories", DEFAULT_CATEGORIES);
+
+  for (const b of bills) {
+    if (b.bill_no) await uploadDoc("bills", b.bill_no, b);
+  }
+  for (const i of items) {
+    await uploadDoc("items", i.id, i);
+  }
+  for (const c of categories) {
+    await uploadDoc("categories", c.id, c);
+  }
+
+  return { ok: true, billsSynced: bills.length, itemsSynced: items.length };
 }
 
 export const api = {
@@ -379,7 +513,84 @@ export const api = {
   bill: getBill,
   deleteBill,
   daily: getSalesReport,
-  clearData
+  clearData,
+  syncAllToCloud,
+  isCloudSyncEnabled,
+  getFirebaseConfig,
+  saveFirebaseConfig,
+  setupRealtimeSync
 };
 
 export default api;
+const PRINTER_URL = "http://localhost:9100";
+
+export type OrderItem = {
+  name: string;
+  quantity: number;
+  notes?: string;
+};
+
+export type KitchenOrder = {
+  orderNumber: string;
+  orderType: "Dine-in" | "Takeaway" | "Delivery";
+  tableNumber?: string;
+  items: OrderItem[];
+};
+
+export async function checkPrinter() {
+  const response = await fetch(`${PRINTER_URL}/health`, {
+    method: "GET",
+    cache: "no-store",
+    signal: AbortSignal.timeout(2000),
+  });
+
+  if (!response.ok) {
+    throw new Error("Printer bridge is unavailable.");
+  }
+
+  return response.json();
+}
+
+export async function printKitchenOrder(order: KitchenOrder) {
+  const content = [
+    {
+      type: "text",
+      text: "KITCHEN ORDER",
+      align: "center",
+      bold: true,
+      size: "large",
+    },
+    { type: "divider" },
+    { type: "text", text: `Order: ${order.orderNumber}`, bold: true },
+    { type: "text", text: `Type: ${order.orderType}` },
+    ...(order.tableNumber
+      ? [{ type: "text", text: `Table: ${order.tableNumber}` }]
+      : []),
+    { type: "divider" },
+    ...order.items.flatMap((item) => [
+      {
+        type: "text",
+        text: `${item.quantity} x ${item.name}`,
+        bold: true,
+      },
+      ...(item.notes
+        ? [{ type: "text", text: `Note: ${item.notes}` }]
+        : []),
+    ]),
+    { type: "divider" },
+    { type: "feed", lines: 3 },
+  ];
+
+  const response = await fetch(`${PRINTER_URL}/print`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error("Kitchen ticket could not be printed.");
+  }
+
+  return response.json();
+}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Receipt, Utensils, Tags, History, BarChart3,
   Settings, Plus, Minus, Trash2, Printer, Search,
-  Pencil, Save, X, Menu, CreditCard
+  Pencil, Save, X, Menu, CreditCard, Moon, Sun, Cloud, RefreshCw, CheckCircle2
 } from "lucide-react";
 import { api } from "./api";
 
@@ -11,6 +11,13 @@ const money = n => `₹${Number(n || 0).toFixed(2)}`;
 function App() {
   const [page, setPage] = useState("billing");
   const [mobile, setMobile] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+
+  useEffect(() => {
+    localStorage.setItem("theme", theme);
+    if (theme === "dark") document.body.classList.add("dark");
+    else document.body.classList.remove("dark");
+  }, [theme]);
   const nav = [
     ["dashboard", "Dashboard", LayoutDashboard],
     ["billing", "New Bill", Receipt],
@@ -30,7 +37,27 @@ function App() {
       <header className="topbar">
         <button className="icon-btn mobile-menu" onClick={() => setMobile(true)}><Menu /></button>
         <div><h2>{nav.find(x => x[0] === page)?.[1]}</h2><span>{new Date().toLocaleDateString()}</span></div>
-        <button className="avatar">N</button>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <div className="theme-toggle-pill">
+            <button
+              type="button"
+              className={`theme-toggle-btn light-btn ${theme === "light" ? "active" : ""}`}
+              onClick={() => setTheme("light")}
+            >
+              <Sun size={15} />
+              <span>Light</span>
+            </button>
+            <button
+              type="button"
+              className={`theme-toggle-btn dark-btn ${theme === "dark" ? "active" : ""}`}
+              onClick={() => setTheme("dark")}
+            >
+              <Moon size={15} />
+              <span>Dark</span>
+            </button>
+          </div>
+          <button className="avatar">N</button>
+        </div>
       </header>
       <div className="content">
         {page === "dashboard" && <Dashboard go={setPage} />}
@@ -47,7 +74,12 @@ function App() {
 
 function Dashboard({ go }) {
   const [data, setData] = useState(null);
-  useEffect(() => { api.daily().then(setData) }, []);
+  const load = () => api.daily().then(setData);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   return <div>
     <div className="welcome"><div><h1>Good morning 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
     <div className="stats">
@@ -103,7 +135,15 @@ function Billing() {
     });
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    window.addEventListener("rb_items_synced", loadData);
+    window.addEventListener("rb_categories_synced", loadData);
+    return () => {
+      window.removeEventListener("rb_items_synced", loadData);
+      window.removeEventListener("rb_categories_synced", loadData);
+    };
+  }, []);
 
   const filtered = useMemo(() => items.filter(x => {
     const matchCat = !cat || cat === "All" || x.category_name === cat || String(x.category_id) === String(cat);
@@ -125,6 +165,19 @@ function Billing() {
     setUpiAmount("");
     setCashAmount("");
   };
+
+  function printKitchenOrder() {
+    if (!cart.length) return alert("Add items first");
+    const ticket = {
+      bill_no: `K${Date.now().toString().slice(-6)}`,
+      created_at: new Date().toISOString(),
+      items: cart.map(item => ({
+        item_name: item.name,
+        quantity: item.quantity,
+      })),
+    };
+    printKitchenTicket(ticket, settings);
+  }
 
   async function savePrint() {
     if (!cart.length) return alert("Add items first");
@@ -192,7 +245,7 @@ function Billing() {
           <div className="total-line"><span>Subtotal</span><b>{money(total)}</b></div>
           <div className="total-line grand"><span>Total</span><b>{money(total)}</b></div>
           <div className="payment"><span>Payment</span><div><button className={payment === "Cash" ? "pay selected" : "pay"} onClick={() => setPayment("Cash")}>💵 Cash</button><button className={payment === "UPI" ? "pay selected" : "pay"} onClick={() => setPayment("UPI")}>📱 UPI</button><button className={typeof payment === "object" ? "pay selected" : "pay"} onClick={() => setShowSplitModal(true)}>🔄 Half</button></div></div>
-          <div className="action-row"><button className="secondary" onClick={() => setCart([])}>Reset Orders</button><button disabled={saving || !cart.length} className="primary print" onClick={savePrint}><Printer size={18} />{saving ? "Saving..." : "Save & Print"}</button></div>
+          <div className="action-row"><button className="secondary" onClick={() => setCart([])}>Reset Orders</button><button disabled={!cart.length} className="secondary" onClick={printKitchenOrder}><Utensils size={18} /> Kitchen Print</button><button disabled={saving || !cart.length} className="primary print" onClick={savePrint}><Printer size={18} />{saving ? "Saving..." : "Save & Print"}</button></div>
         </div>
       </section>
     </div>
@@ -203,7 +256,11 @@ function Billing() {
 function Items() {
   const [items, setItems] = useState([]), [cats, setCats] = useState([]), [editing, setEditing] = useState(null), [show, setShow] = useState(false), [search, setSearch] = useState("");
   const load = () => Promise.all([api.items(), api.categories()]).then(([i, c]) => { setItems(i); setCats(c) });
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_items_synced", load);
+    return () => window.removeEventListener("rb_items_synced", load);
+  }, []);
   const save = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -227,7 +284,12 @@ function Items() {
 
 function Categories() {
   const [cats, setCats] = useState([]), [name, setName] = useState(""), [editing, setEditing] = useState(null);
-  const load = () => api.categories().then(setCats); useEffect(load, []);
+  const load = () => api.categories().then(setCats);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_categories_synced", load);
+    return () => window.removeEventListener("rb_categories_synced", load);
+  }, []);
   async function save() { if (!name.trim()) return; if (editing) await api.editCategory(editing.id, name); else await api.addCategory(name); setName(""); setEditing(null); load() }
   return <div><div className="panel category-add"><div><h3>{editing ? "Edit Category" : "Add Category"}</h3><p>Create menu categories.</p></div><div className="inline-form"><input placeholder="Category name" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} /><button className="primary" onClick={save}><Plus size={17} />{editing ? "Update" : "Add"}</button>{editing && <button className="secondary" onClick={() => { setEditing(null); setName("") }}><X size={17} /></button>}</div></div>
     <div className="category-grid">{cats.map(c => <div className="category-card" key={c.id}><span>🏷️</span><div><b>{c.name}</b><small>Menu category</small></div><div className="actions"><button onClick={() => { setEditing(c); setName(c.name) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete category?")) { await api.deleteCategory(c.id); load() } }}><Trash2 size={16} /></button></div></div>)}</div></div>
@@ -236,7 +298,12 @@ function Categories() {
 function HistoryPage() {
   const [bills, setBills] = useState([]), [search, setSearch] = useState(""), [selected, setSelected] = useState(null);
   const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
-  const load = () => api.bills().then(setBills); useEffect(load, []);
+  const load = () => api.bills().then(setBills);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   
   const currentMonthStr = new Date().toISOString().slice(0, 7);
   const monthlyBills = bills.filter(x => x.created_at && x.created_at.startsWith(currentMonthStr));
@@ -265,7 +332,13 @@ function HistoryPage() {
 function BillModal({ bill, onClose }) { const [s, setS] = useState(null); useEffect(() => api.settings().then(setS), []); return <Modal title={`Bill ${bill.bill_no}`} onClose={onClose}><div className="receipt-preview"><ReceiptContent bill={bill} settings={s} /></div><button className="primary full" onClick={() => printReceipt(bill, s)}><Printer size={17} /> Reprint Bill</button></Modal> }
 
 function Reports() {
-  const [data, setData] = useState(null); useEffect(() => { api.daily().then(setData) }, []);
+  const [data, setData] = useState(null);
+  const load = () => api.daily().then(setData);
+  useEffect(() => {
+    load();
+    window.addEventListener("rb_bills_synced", load);
+    return () => window.removeEventListener("rb_bills_synced", load);
+  }, []);
   return <div><div className="report-header"><div><h1>Today's Report</h1><p>Sales summary for today.</p></div><button className="secondary" onClick={() => window.print()}>Print Report</button></div><div className="stats"><Stat title="Total Sales" value={money(data?.summary.total)} icon="₹" /><Stat title="Bills" value={data?.summary.bills || 0} icon="🧾" /><Stat title="Cash" value={money(data?.summary.cash)} icon="💵" /><Stat title="UPI" value={money(data?.summary.upi)} icon="📱" /></div><div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead><tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div></div></div>
 }
 
@@ -273,9 +346,56 @@ function SettingsPage() {
   const [form, setForm] = useState(null);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearPassword, setClearPassword] = useState("");
+  const [firebaseInput, setFirebaseInput] = useState(() => {
+    const cfg = api.getFirebaseConfig();
+    return cfg ? JSON.stringify(cfg, null, 2) : "";
+  });
+  const [syncing, setSyncing] = useState(false);
+  const [isCloud, setIsCloud] = useState(() => api.isCloudSyncEnabled());
+
   useEffect(() => api.settings().then(setForm), []);
   if (!form) return <div className="loading">Loading...</div>;
+
   const save = async e => { e.preventDefault(); await api.saveSettings(form); alert("Settings saved") };
+
+  const handleSaveFirebase = async () => {
+    try {
+      if (!firebaseInput.trim()) {
+        api.saveFirebaseConfig(null);
+        setIsCloud(false);
+        alert("Cloud sync disabled. Operating in local storage mode.");
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(firebaseInput);
+      } catch {
+        throw new Error("Invalid JSON format. Please paste the Firebase config object.");
+      }
+      if (!parsed.apiKey || !parsed.projectId) {
+        throw new Error("Missing apiKey or projectId in Firebase configuration.");
+      }
+      api.saveFirebaseConfig(parsed);
+      api.setupRealtimeSync();
+      setIsCloud(true);
+      alert("✅ Connected to Firebase Cloud! Multi-device real-time sync is now ACTIVE.");
+    } catch (err) {
+      alert("Configuration Error: " + err.message);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncAllToCloud();
+      alert(`✅ Cloud Sync Complete!\n${res.billsSynced} bills and ${res.itemsSynced} menu items synced to the Cloud.\nAll mobile phones can now see this data without missing anything!`);
+    } catch (err) {
+      alert("Sync failed: " + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleClearData = async () => {
     if (!clearPassword) { return alert("Please enter password"); }
     try {
@@ -287,7 +407,82 @@ function SettingsPage() {
       alert("Error: " + e.message);
     }
   };
-  return <div className="settings-grid"><form className="panel form" onSubmit={save}><div><h3>Restaurant Information</h3><p>These details appear on printed receipts.</p></div><label>Restaurant Name<input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} /></label><label>Address<textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></label><label>Phone<input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label><label>Paper Size<select value={form.paper_size} onChange={e => setForm({ ...form, paper_size: e.target.value })}><option>80mm</option><option>58mm</option></select></label><button className="primary"><Save size={17} /> Save Settings</button></form><div className="panel"><h3>Printer Setup</h3><p>For Android Bluetooth printing, pair your 58mm ESC/POS printer first, then configure it in RawBT.</p><div className="printer-box"><Printer size={38} /><b>Bluetooth Thermal Printer</b><span>Works with POS58UB / compatible ESC/POS printers on Android.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div></div><div className="panel"><h3>Danger Zone</h3><p>Clear all orders and bills data.</p><button className="secondary danger" onClick={() => setShowClearModal(true)}>Clear All Data</button></div>{showClearModal && <Modal title="Clear All Data" onClose={() => { setShowClearModal(false); setClearPassword("") }}><form onSubmit={e => { e.preventDefault(); handleClearData() }} className="form"><p style={{ color: "#d32f2f", fontWeight: "bold" }}>⚠️ This will permanently delete all orders and bills. This cannot be undone!</p><label>Enter Password to Confirm<input type="password" placeholder="Enter password" value={clearPassword} onChange={e => setClearPassword(e.target.value)} required autoFocus /></label><div className="action-row"><button type="button" className="secondary" onClick={() => { setShowClearModal(false); setClearPassword("") }}>Cancel</button><button type="submit" className="secondary danger">Clear All Data</button></div></form></Modal>}</div>
+
+  return <div className="settings-grid">
+    <div className="panel" style={{ gridColumn: "1 / -1" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
+        <div>
+          <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}>
+            <Cloud size={22} color="#2563eb" /> Multi-Phone Real-Time Cloud Sync
+          </h3>
+          <p style={{ margin: "4px 0 0", color: "#64748b" }}>
+            Allows every phone in your restaurant to create and view bills live without missing any data.
+          </p>
+        </div>
+        <span className={`badge ${isCloud ? "success" : ""}`} style={{ fontSize: "14px", padding: "6px 14px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+          {isCloud ? "🟢 Cloud Sync Active" : "🟡 Local Mode (Single Phone)"}
+        </span>
+      </div>
+
+      <div style={{ background: isCloud ? "#f0fdf4" : "#f8fafc", border: `1px solid ${isCloud ? "#bbf7d0" : "#e2e8f0"}`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ fontWeight: 600, color: isCloud ? "#166534" : "#334155", marginBottom: "8px" }}>
+          {isCloud ? "✅ All connected mobile devices sync bills automatically in real time." : "ℹ️ How to sync across multiple phones:"}
+        </div>
+        {!isCloud && (
+          <ol style={{ margin: "0 0 12px 20px", padding: 0, fontSize: "13px", color: "#475569", lineHeight: "1.6" }}>
+            <li>Open <b><a href="https://console.firebase.google.com" target="_blank" rel="noreferrer">console.firebase.google.com</a></b> (Free Spark plan).</li>
+            <li>Create a Project &gt; Click <b>Web (&lt;/&gt;)</b> to get your Firebase Config.</li>
+            <li>Go to <b>Firestore Database</b> &gt; Create Database (Start in test mode).</li>
+            <li>Paste your Firebase Web Config JSON below and click <b>Save &amp; Connect Cloud</b>.</li>
+          </ol>
+        )}
+        <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+          Firebase Web Config JSON:
+        </label>
+        <textarea
+          value={firebaseInput}
+          onChange={e => setFirebaseInput(e.target.value)}
+          placeholder={`{\n  "apiKey": "AIzaSy...",\n  "projectId": "mandi-pos-...",\n  "authDomain": "...",\n  "storageBucket": "...",\n  "appId": "..."\n}`}
+          rows={5}
+          style={{ width: "100%", fontFamily: "monospace", fontSize: "12px", borderRadius: "8px", border: "1px solid #cbd5e1", padding: "10px", background: "#fff", boxSizing: "border-box" }}
+        />
+        <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
+          <button type="button" className="primary" onClick={handleSaveFirebase}>
+            <Save size={16} /> Save &amp; Connect Cloud
+          </button>
+          {isCloud && (
+            <button type="button" className="secondary" onClick={handleSyncAll} disabled={syncing}>
+              <RefreshCw size={16} /> {syncing ? "Syncing..." : "Sync All Local Data to Cloud"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <form className="panel form" onSubmit={save}>
+      <div><h3>Restaurant Information</h3><p>These details appear on printed receipts.</p></div>
+      <label>Restaurant Name<input value={form.restaurant_name} onChange={e => setForm({ ...form, restaurant_name: e.target.value })} /></label>
+      <label>Address<textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+      <label>Phone<input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
+      <label>Paper Size<select value={form.paper_size} onChange={e => setForm({ ...form, paper_size: e.target.value })}><option>80mm</option><option>58mm</option></select></label>
+      <button className="primary"><Save size={17} /> Save Settings</button>
+    </form>
+    <div className="panel">
+      <h3>Printer Setup</h3><p>For Android Bluetooth printing, pair your 58mm ESC/POS printer first, then configure it in RawBT.</p>
+      <div className="printer-box"><Printer size={38} /><b>Bluetooth Thermal Printer</b><span>Works with POS58UB / compatible ESC/POS printers on Android.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div>
+    </div>
+    <div className="panel">
+      <h3>Danger Zone</h3><p>Clear all orders and bills data.</p>
+      <button className="secondary danger" onClick={() => setShowClearModal(true)}>Clear All Data</button>
+    </div>
+    {showClearModal && <Modal title="Clear All Data" onClose={() => { setShowClearModal(false); setClearPassword("") }}>
+      <form onSubmit={e => { e.preventDefault(); handleClearData() }} className="form">
+        <p style={{ color: "#d32f2f", fontWeight: "bold" }}>⚠️ This will permanently delete all orders and bills. This cannot be undone!</p>
+        <label>Enter Password to Confirm<input type="password" placeholder="Enter password" value={clearPassword} onChange={e => setClearPassword(e.target.value)} required autoFocus /></label>
+        <div className="action-row"><button type="button" className="secondary" onClick={() => { setShowClearModal(false); setClearPassword("") }}>Cancel</button><button type="submit" className="secondary danger">Clear All Data</button></div>
+      </form>
+    </Modal>}
+  </div>;
 }
 
 function Toolbar({ title, search, setSearch, action, label }) { return <div className="toolbar"><div><h1>{title}</h1><p>Manage your restaurant data.</p></div><div className="toolbar-actions">{search !== undefined && <div className="search"><Search size={18} /><input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} /></div>}{action && <button className="primary" onClick={action}><Plus size={18} />{label}</button>}</div></div> }
@@ -381,6 +576,47 @@ function buildEscPosReceipt(bill, settings) {
   return concatBytes(init, leftCmd, text, cut);
 }
 
+function printKitchenTicket(ticket, settings) {
+  const width = settings?.paper_size === "80mm" ? 48 : 32;
+  const lines = [];
+  const add = value => lines.push(String(value ?? ""));
+  const center = value => {
+    const text = String(value ?? "");
+    add(text.length >= width ? text.slice(0, width) : " ".repeat(Math.floor((width - text.length) / 2)) + text);
+  };
+  const rule = () => add("-".repeat(width));
+
+  center("KITCHEN ORDER");
+  rule();
+  add(`Order: ${ticket.bill_no}`);
+  add(new Date(ticket.created_at).toLocaleString());
+  rule();
+  (ticket.items || []).forEach(item => {
+    const text = `${Number(item.quantity || 0)} x ${item.item_name || item.name || "Item"}`;
+    for (let i = 0; i < text.length; i += width) add(text.slice(i, i + width));
+  });
+  rule();
+  center("PLEASE PREPARE");
+  add(""); add(""); add("");
+
+  const ESC = 0x1b, GS = 0x1d;
+  const init = new Uint8Array([ESC, 0x40]);
+  const bytes = concatBytes(init, escPosBytes(lines.join("\n") + "\n"), new Uint8Array([GS, 0x56, 0x41, 0x03]));
+  const rawbtUrl = `rawbt:base64,${toBase64(bytes)}`;
+
+  if (/Android/i.test(navigator.userAgent)) {
+    window.location.href = rawbtUrl;
+    return;
+  }
+
+  const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+  const html = `<!doctype html><html><head><title>Kitchen ${escapeHtml(ticket.bill_no)}</title><style>@page{size:${settings?.paper_size || "58mm"} auto;margin:0}body{font-family:monospace;width:${settings?.paper_size === "80mm" ? "80mm" : "58mm"};margin:0 auto;padding:3mm;box-sizing:border-box;font-size:12px;white-space:pre-wrap}h3{text-align:center}</style></head><body><h3>KITCHEN ORDER</h3>${escapeHtml([`Order: ${ticket.bill_no}`, new Date(ticket.created_at).toLocaleString(), "------------------------------", ...(ticket.items || []).map(item => `${item.quantity} x ${item.item_name || item.name || "Item"}`), "------------------------------", "PLEASE PREPARE"].join("\n"))}<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script></body></html>`;
+  const win = window.open("", "_blank", "width=420,height=700");
+  if (!win) return alert("Please allow popups for printing.");
+  win.document.write(html);
+  win.document.close();
+}
+
 function printReceipt(bill, settings) {
   // Android Bluetooth thermal printers using Bluetooth Classic/SPP cannot be
   // reached directly by Chrome. RawBT acts as the local ESC/POS print bridge.
@@ -403,4 +639,29 @@ function printReceipt(bill, settings) {
 }
 function printTest(s) { const fake = { bill_no: "TEST", created_at: new Date().toISOString(), total: 0, payment_method: "TEST", items: [{ item_name: "Printer Test", quantity: 1, amount: 0 }] }; printReceipt(fake, s) }
 
+function buildReceiptHTML(bill, settings) {
+  const itemRows = (bill.items || []).map(x =>
+    `<tr><td class="name">${x.item_name || x.name || "Item"} x${x.quantity}</td><td class="amt" style="text-align:right">${money(x.amount || (Number(x.price || 0) * (x.quantity || 1)))}</td></tr>`
+  ).join("");
+  return [
+    `<div class="receipt">`,
+    `<div class="rh2" style="text-align:center;font-weight:bold;font-size:16px">${settings?.restaurant_name || "SASH MANDI DARBAR"}</div>`,
+    settings?.address ? `<div class="rp" style="text-align:center">${settings.address}</div>` : "",
+    settings?.phone ? `<div class="rp" style="text-align:center">Ph: ${settings.phone}</div>` : "",
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<div>Bill: ${bill.bill_no}</div>`,
+    `<div>${new Date(bill.created_at || Date.now()).toLocaleString()}</div>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<table style="width:100%;border-collapse:collapse"><thead><tr><td style="text-align:left"><b>ITEM</b></td><td style="text-align:right"><b>AMT</b></td></tr></thead>`,
+    `<tbody>${itemRows}</tbody></table>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<table style="width:100%;border-collapse:collapse"><tr><td style="font-weight:bold">TOTAL</td><td style="font-weight:bold;text-align:right">${money(bill.total)}</td></tr></table>`,
+    `<div style="margin-top:4px">Payment: ${bill.payment_method || "Cash"}</div>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<div style="text-align:center;font-weight:bold;margin-top:4px">Thank You! Visit Again</div>`,
+    `</div>`,
+  ].join("");
+}
+
 export default App;
+

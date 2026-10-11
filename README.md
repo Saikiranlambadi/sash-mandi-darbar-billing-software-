@@ -29,6 +29,7 @@ The billing page now supports Android Bluetooth ESC/POS printing through RawBT.
 3. Open RawBT and select the paired POS58UB printer.
 4. In this billing website, set **Paper Size** to **58mm** in Settings.
 5. Use **Save & Print**. On Android, the website sends an ESC/POS receipt to RawBT using its `rawbt:base64,` URL scheme.
+6. Use **Kitchen Print** to print a separate kitchen ticket with the order reference and item quantities (without prices). Use **Save & Print** for the customer receipt.
 
 Desktop browsers keep the normal browser print fallback.
 
