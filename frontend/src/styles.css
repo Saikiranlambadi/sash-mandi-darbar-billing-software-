@@ -23,10 +23,27 @@ body.dark .pay, body.dark .chips button { background: #374151; color: #d1d5db; }
 body.dark .qty button, body.dark .actions button, body.dark .modal-head button { background: #374151; color: #d1d5db; }
 body.dark .secondary { background: #374151; color: #d1d5db; }
 body.dark .stat-icon { background: #374151; color: #60a5fa; }
+body.dark .search { background: #374151; border-color: #4b5563; }
+body.dark .search input { background: transparent; color: #f9fafb; }
+body.dark .search svg { color: #9ca3af; }
+body.dark .view-btn { background: #1e293b; color: #60a5fa; border: 1px solid #334155; }
+body.dark .view-btn:hover { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+body.dark .item-pill { background: rgba(59, 130, 246, 0.18) !important; color: #93c5fd !important; border: 1px solid rgba(59, 130, 246, 0.25); }
+body.dark .filter-tabs { background: #111827; border: 1px solid #374151; }
+body.dark .filter-tab-btn { color: #9ca3af; }
+body.dark .filter-tab-btn.active { background: #246bfe; color: #ffffff; }
+body.dark .amount-highlight { color: #60a5fa !important; }
+body.dark select { background: #374151 !important; color: #f9fafb !important; border-color: #4b5563 !important; }
 body.dark .badge { background: #374151; color: #9ca3af; }
 body.dark .badge.success { background: #064e3b; color: #34d399; }
 body.dark .receipt-preview { background: #111827; }
 body.dark .receipt { background: #fff; color: #000; }
+
+.filter-tabs { display: inline-flex; background: #eef2f7; border-radius: 8px; padding: 3px; gap: 2px; }
+.filter-tab-btn { border: 0; border-radius: 6px; padding: 6px 14px; font-weight: 600; font-size: 13px; cursor: pointer; background: transparent; color: #475569; transition: all 0.15s ease; }
+.filter-tab-btn.active { background: #246bfe; color: #ffffff; box-shadow: 0 1px 3px rgba(36, 107, 254, 0.3); }
+.item-pill { display: inline-block; background: rgba(36, 107, 254, 0.08); color: #1d60df; padding: 2px 8px; border-radius: 6px; margin: 2px 4px 2px 0; font-size: 12px; font-weight: 500; }
+.amount-highlight { color: #1d60df; font-weight: bold; }
 
 .theme-toggle-pill {
   display: flex;

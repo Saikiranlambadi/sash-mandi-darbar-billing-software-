@@ -4,15 +4,23 @@ import {
   Settings, Plus, Minus, Trash2, Printer, Search,
   Pencil, Save, X, Menu, CreditCard, Moon, Sun, Cloud, RefreshCw, CheckCircle2
 } from "lucide-react";
-import { api } from "./api";
+import { api, getItemImage } from "./api";
 
 const money = n => `₹${Number(n || 0).toFixed(2)}`;
+
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  if (hour >= 17 && hour < 22) return "Good evening";
+  return "Good night";
+};
 
 function App() {
   const [page, setPage] = useState("billing");
   const [mobile, setMobile] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
-  
+  const [theme, setTheme] = useState(() => "dark");
+
   useEffect(() => {
     localStorage.setItem("theme", theme);
     if (theme === "dark") document.body.classList.add("dark");
@@ -23,7 +31,7 @@ function App() {
     ["billing", "New Bill", Receipt],
     ["items", "Food Items", Utensils],
     ["categories", "Categories", Tags],
-    ["history", "Bill history", History],
+    ["history", "Bill History", History],
     ["reports", "Reports", BarChart3],
     ["settings", "Settings", Settings],
   ];
@@ -74,24 +82,136 @@ function App() {
 
 function Dashboard({ go }) {
   const [data, setData] = useState(null);
-  const load = () => api.daily().then(setData);
+  const [bills, setBills] = useState([]);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [greeting, setGreeting] = useState(getGreeting);
+
+  const load = () => {
+    api.daily().then(setData);
+    api.bills().then(setBills);
+  };
+
   useEffect(() => {
     load();
     window.addEventListener("rb_bills_synced", load);
-    return () => window.removeEventListener("rb_bills_synced", load);
+    const interval = setInterval(() => setGreeting(getGreeting()), 60000);
+    return () => {
+      window.removeEventListener("rb_bills_synced", load);
+      clearInterval(interval);
+    };
   }, []);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const filteredBills = bills.filter(b => {
+    if (filter === "today" && (!b.created_at || !b.created_at.startsWith(todayStr))) {
+      return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchNo = (b.bill_no || "").toLowerCase().includes(q);
+      const matchItems = (b.items || []).some(it => (it.item_name || it.name || "").toLowerCase().includes(q));
+      const matchPay = (b.payment_method || "").toLowerCase().includes(q);
+      return matchNo || matchItems || matchPay;
+    }
+    return true;
+  });
+
   return <div>
-    <div className="welcome"><div><h1>Good morning 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
+    <div className="welcome"><div><h1>{greeting} 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
     <div className="stats">
       <Stat title="Today's Sales" value={money(data?.summary.total)} icon="₹" />
       <Stat title="Total Bills" value={data?.summary.bills || 0} icon="🧾" />
       <Stat title="Cash Sales" value={money(data?.summary.cash)} icon="💵" />
       <Stat title="UPI Sales" value={money(data?.summary.upi)} icon="📱" />
     </div>
-    <div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div>
-      <div className="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Sales</th></tr></thead>
-        <tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div>
+    <div className="panel">
+      <div className="panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Every Bill ({filteredBills.length})</h3>
+          <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#7c8799" }}>Recent customer orders and detailed billing history</p>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <div className="filter-tabs">
+            <button
+              type="button"
+              className={`filter-tab-btn ${filter === "all" ? "active" : ""}`}
+              onClick={() => setFilter("all")}
+            >
+              All Bills
+            </button>
+            <button
+              type="button"
+              className={`filter-tab-btn ${filter === "today" ? "active" : ""}`}
+              onClick={() => setFilter("today")}
+            >
+              Today's Bills
+            </button>
+          </div>
+          <div className="search" style={{ minWidth: "180px", padding: "6px 10px" }}>
+            <Search size={16} />
+            <input
+              placeholder="Search bill or item..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bill No.</th>
+              <th>Date & Time</th>
+              <th>Items Ordered</th>
+              <th>Payment</th>
+              <th>Amount</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredBills.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: "center", padding: "26px", color: "#8a94a4" }}>
+                  No bills found.
+                </td>
+              </tr>
+            ) : (
+              filteredBills.map(b => (
+                <tr key={b.id || b.bill_no}>
+                  <td><b>{b.bill_no}</b></td>
+                  <td>{new Date(b.created_at || Date.now()).toLocaleString()}</td>
+                  <td>
+                    <div style={{ maxWidth: "340px", whiteSpace: "normal", fontSize: "13px", lineHeight: "1.4" }}>
+                      {(b.items || []).map((it, idx) => (
+                        <span
+                          key={idx}
+                          className="item-pill"
+                        >
+                          {it.item_name || it.name || "Item"} ×{it.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <span className="badge">{b.payment_method || "Cash"}</span>
+                  </td>
+                  <td><strong className="amount-highlight" style={{ fontSize: "15px" }}>{money(b.total)}</strong></td>
+                  <td>
+                    <button className="view-btn" onClick={async () => setSelectedBill(await api.bill(b.id || b.bill_no))}>
+                      View / Reprint
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
+    {selectedBill && <BillModal bill={selectedBill} onClose={() => setSelectedBill(null)} />}
   </div>
 }
 function Stat({ title, value, icon }) { return <div className="stat"><div className="stat-icon">{icon}</div><div><span>{title}</span><strong>{value}</strong></div></div> }
@@ -166,6 +286,19 @@ function Billing() {
     setCashAmount("");
   };
 
+  function printKitchenOrder() {
+    if (!cart.length) return alert("Add items first");
+    const ticket = {
+      bill_no: `K${Date.now().toString().slice(-6)}`,
+      created_at: new Date().toISOString(),
+      items: cart.map(item => ({
+        item_name: item.name,
+        quantity: item.quantity,
+      })),
+    };
+    printKitchenTicket(ticket, settings);
+  }
+
   async function savePrint() {
     if (!cart.length) return alert("Add items first");
     setSaving(true);
@@ -221,7 +354,7 @@ function Billing() {
               )}
             </div>
           ) : (
-            filtered.map(x => <button className="product-card" key={x.id} onClick={() => add(x)}><img className="product-image" src={x.image} alt={x.name} /><div className="product-name">{x.name}</div><div className="product-price">₹{Number(x.price).toFixed(2)}</div></button>)
+            filtered.map(x => <button className="product-card" key={x.id} onClick={() => add(x)}><img className="product-image" src={getItemImage(x)} alt={x.name} onError={e => { e.target.onerror = null; e.target.src = getItemImage({ name: x.name }); }} /><div className="product-name">{x.name}</div><div className="product-price">₹{Number(x.price).toFixed(2)}</div></button>)
           )}
         </div>
       </section>
@@ -232,7 +365,7 @@ function Billing() {
           <div className="total-line"><span>Subtotal</span><b>{money(total)}</b></div>
           <div className="total-line grand"><span>Total</span><b>{money(total)}</b></div>
           <div className="payment"><span>Payment</span><div><button className={payment === "Cash" ? "pay selected" : "pay"} onClick={() => setPayment("Cash")}>💵 Cash</button><button className={payment === "UPI" ? "pay selected" : "pay"} onClick={() => setPayment("UPI")}>📱 UPI</button><button className={typeof payment === "object" ? "pay selected" : "pay"} onClick={() => setShowSplitModal(true)}>🔄 Half</button></div></div>
-          <div className="action-row"><button className="secondary" onClick={() => setCart([])}>Reset Orders</button><button disabled={saving || !cart.length} className="primary print" onClick={savePrint}><Printer size={18} />{saving ? "Saving..." : "Save & Print"}</button></div>
+          <div className="action-row"><button className="secondary" onClick={() => setCart([])}>Reset Orders</button><button disabled={!cart.length} className="secondary" onClick={printKitchenOrder}><Utensils size={18} /> Kitchen Print</button><button disabled={saving || !cart.length} className="primary print" onClick={savePrint}><Printer size={18} />{saving ? "Saving..." : "Save & Print"}</button></div>
         </div>
       </section>
     </div>
@@ -265,8 +398,8 @@ function Items() {
   };
   const list = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()));
   return <div><Toolbar title="Food Items" search={search} setSearch={setSearch} action={() => { setEditing(null); setShow(true) }} label="Add Item" />
-    <div className="panel table-wrap"><table><thead><tr><th>Image</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><img src={x.image} alt={x.name} style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "2px solid #f1b64a", display: "block" }} /></td><td><b>{x.name}</b></td><td>{x.category_name || "Uncategorized"}</td><td>{money(x.price)}</td><td><span className={x.available ? "badge success" : "badge"}>{x.available ? "Available" : "Unavailable"}</span></td><td className="actions"><button onClick={() => { setEditing(x); setShow(true) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete item?")) { await api.deleteItem(x.id); load() } }}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div>
-    {show && <Modal title={editing ? "Edit Item" : "Add Food Item"} onClose={() => { setShow(false); setEditing(null) }}><form onSubmit={save} className="form"><label>Item Name<input name="name" defaultValue={editing?.name || ""} required /></label><label>Category<select name="category_id" defaultValue={editing?.category_id || ""}><option value="">Select category</option>{cats.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label><label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price || ""} required /></label><label>Image URL (optional)<input name="image" defaultValue={editing?.image || ""} placeholder="/images/..." /></label><label className="check"><input name="available" type="checkbox" defaultChecked={editing ? !!editing.available : true} /> Available</label><button className="primary"><Save size={17} /> Save Item</button></form></Modal>}</div>
+    <div className="panel table-wrap"><table><thead><tr><th>Image</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><img src={getItemImage(x)} alt={x.name} onError={e => { e.target.onerror = null; e.target.src = getItemImage({ name: x.name }); }} style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "2px solid #f1b64a", display: "block" }} /></td><td><b>{x.name}</b></td><td>{x.category_name || "Uncategorized"}</td><td>{money(x.price)}</td><td><span className={x.available ? "badge success" : "badge"}>{x.available ? "Available" : "Unavailable"}</span></td><td className="actions"><button onClick={() => { setEditing(x); setShow(true) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete item?")) { await api.deleteItem(x.id); load() } }}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div>
+    {show && <Modal title={editing ? "Edit Item" : "Add Food Item"} onClose={() => { setShow(false); setEditing(null) }}><form onSubmit={save} className="form"><label>Item Name<input name="name" defaultValue={editing?.name || ""} required /></label><label>Category<select name="category_id" defaultValue={editing?.category_id || ""}><option value="">Select category</option>{cats.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label><label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price || ""} required /></label><label>Image URL (optional)<input name="image" defaultValue={editing?.image || ""} placeholder="https://images.unsplash.com/..." /></label><label className="check"><input name="available" type="checkbox" defaultChecked={editing ? !!editing.available : true} /> Available</label><button className="primary"><Save size={17} /> Save Item</button></form></Modal>}</div>
 }
 
 function Categories() {
@@ -284,29 +417,146 @@ function Categories() {
 
 function HistoryPage() {
   const [bills, setBills] = useState([]), [search, setSearch] = useState(""), [selected, setSelected] = useState(null);
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
   const load = () => api.bills().then(setBills);
   useEffect(() => {
     load();
     window.addEventListener("rb_bills_synced", load);
     return () => window.removeEventListener("rb_bills_synced", load);
   }, []);
-  const list = bills.filter(x => x.bill_no.toLowerCase().includes(search.toLowerCase()));
+  
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const monthlyBills = bills.filter(x => x.created_at && x.created_at.startsWith(currentMonthStr));
+  const monthlySales = monthlyBills.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+
+  const list = bills.filter(x => x.created_at && x.created_at.startsWith(filterDate) && x.bill_no.toLowerCase().includes(search.toLowerCase()));
+  
+  const uniqueDates = [...new Set(bills.map(b => b.created_at ? b.created_at.slice(0, 10) : ""))].filter(Boolean).sort((a,b) => b.localeCompare(a));
+  if (!uniqueDates.includes(new Date().toISOString().slice(0, 10))) uniqueDates.unshift(new Date().toISOString().slice(0, 10));
+
   return <div><Toolbar title="Bill History" search={search} setSearch={setSearch} />
-    <div className="panel table-wrap"><table><thead><tr><th>Bill No.</th><th>Date & Time</th><th>Payment</th><th>Amount</th><th>Action</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><b>{x.bill_no}</b></td><td>{new Date(x.created_at).toLocaleString()}</td><td>{x.payment_method}</td><td>{money(x.total)}</td><td><button className="view-btn" onClick={async () => setSelected(await api.bill(x.id))}>View / Reprint</button></td></tr>)}</tbody></table></div>
+    <div className="stats">
+      <Stat title={`Monthly Sales (${new Date().toLocaleString('default', { month: 'long' })})`} value={money(monthlySales)} icon="📅" />
+      <Stat title="Monthly Bills" value={monthlyBills.length} icon="🧾" />
+    </div>
+    <div className="panel" style={{ marginBottom: "16px", display: "flex", gap: "10px", alignItems: "center" }}>
+      <label style={{ fontWeight: "bold" }}>Filter by Date: </label>
+      <select value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d5dbe4", outline: "none", fontSize: "15px", background: "white" }}>
+        {uniqueDates.map(d => <option key={d} value={d}>{d === new Date().toISOString().slice(0, 10) ? "Today (" + d + ")" : d}</option>)}
+      </select>
+    </div>
+    <div className="panel table-wrap"><table><thead><tr><th>Bill No.</th><th>Date & Time</th><th>Payment</th><th>Amount</th><th>Action</th></tr></thead><tbody>{list.length === 0 ? <tr><td colSpan="5" style={{ textAlign: "center", padding: "20px" }}>No bills found for this date.</td></tr> : list.map(x => <tr key={x.id}><td><b>{x.bill_no}</b></td><td>{new Date(x.created_at).toLocaleString()}</td><td>{x.payment_method}</td><td>{money(x.total)}</td><td><button className="view-btn" onClick={async () => setSelected(await api.bill(x.id))}>View / Reprint</button></td></tr>)}</tbody></table></div>
     {selected && <BillModal bill={selected} onClose={() => setSelected(null)} />}</div>
 }
 
 function BillModal({ bill, onClose }) { const [s, setS] = useState(null); useEffect(() => api.settings().then(setS), []); return <Modal title={`Bill ${bill.bill_no}`} onClose={onClose}><div className="receipt-preview"><ReceiptContent bill={bill} settings={s} /></div><button className="primary full" onClick={() => printReceipt(bill, s)}><Printer size={17} /> Reprint Bill</button></Modal> }
 
 function Reports() {
-  const [data, setData] = useState(null);
-  const load = () => api.daily().then(setData);
+  const [bills, setBills] = useState([]);
+  const [filterDate, setFilterDate] = useState("all");
+  const load = () => api.bills().then(setBills);
+
   useEffect(() => {
     load();
     window.addEventListener("rb_bills_synced", load);
     return () => window.removeEventListener("rb_bills_synced", load);
   }, []);
-  return <div><div className="report-header"><div><h1>Today's Report</h1><p>Sales summary for today.</p></div><button className="secondary" onClick={() => window.print()}>Print Report</button></div><div className="stats"><Stat title="Total Sales" value={money(data?.summary.total)} icon="₹" /><Stat title="Bills" value={data?.summary.bills || 0} icon="🧾" /><Stat title="Cash" value={money(data?.summary.cash)} icon="💵" /><Stat title="UPI" value={money(data?.summary.upi)} icon="📱" /></div><div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead><tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div></div></div>
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const uniqueDates = [...new Set(bills.map(b => b.created_at ? b.created_at.slice(0, 10) : ""))].filter(Boolean).sort((a, b) => b.localeCompare(a));
+  if (!uniqueDates.includes(todayStr)) uniqueDates.unshift(todayStr);
+
+  const selectedBills = filterDate === "all"
+    ? bills
+    : bills.filter(b => b.created_at && b.created_at.startsWith(filterDate));
+
+  const summary = {
+    total: selectedBills.reduce((s, b) => s + (Number(b.total) || 0), 0),
+    bills: selectedBills.length,
+    cash: selectedBills.reduce((s, b) => s + (Number(b.cash_amount) || 0), 0),
+    upi: selectedBills.reduce((s, b) => s + (Number(b.upi_amount) || 0), 0),
+  };
+
+  const topMap = {};
+  selectedBills.forEach(b => {
+    (b.items || []).forEach(item => {
+      const name = item.item_name || item.name || "Item";
+      if (!topMap[name]) topMap[name] = { name, quantity: 0, amount: 0 };
+      topMap[name].quantity += Number(item.quantity) || 0;
+      topMap[name].amount += Number(item.amount) || (Number(item.price || 0) * (Number(item.quantity) || 1));
+    });
+  });
+
+  const topItems = Object.values(topMap).sort((a, b) => b.quantity - a.quantity);
+
+  return <div>
+    <div className="report-header">
+      <div>
+        <h1>Sales & Top Selling Items Report</h1>
+        <p>Comprehensive item-wise sales and performance analytics.</p>
+      </div>
+      <button className="secondary" onClick={() => window.print()}><Printer size={16} /> Print Report</button>
+    </div>
+
+    <div className="panel" style={{ marginBottom: "18px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+      <label style={{ fontWeight: "bold" }}>Filter Period:</label>
+      <select
+        value={filterDate}
+        onChange={e => setFilterDate(e.target.value)}
+        style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid #d5dbe4", outline: "none", fontSize: "15px", background: "white" }}
+      >
+        <option value="all">All Time</option>
+        <option value={todayStr}>Today ({todayStr})</option>
+        {uniqueDates.filter(d => d !== todayStr).map(d => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </select>
+    </div>
+
+    <div className="stats">
+      <Stat title="Total Sales" value={money(summary.total)} icon="₹" />
+      <Stat title="Bills" value={summary.bills} icon="🧾" />
+      <Stat title="Cash Sales" value={money(summary.cash)} icon="💵" />
+      <Stat title="UPI Sales" value={money(summary.upi)} icon="📱" />
+    </div>
+
+    <div className="panel">
+      <div className="panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Top Selling Items</h3>
+          <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#7c8799" }}>
+            Ranked by quantity sold {filterDate === "all" ? "(All Time)" : filterDate === todayStr ? "(Today)" : `(${filterDate})`}
+          </p>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "70px" }}>Rank</th>
+              <th>Item</th>
+              <th>Qty Sold</th>
+              <th>Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topItems.length === 0 ? (
+              <tr><td colSpan="4" style={{ textAlign: "center", padding: "24px", color: "#8a94a4" }}>No sales recorded for this period.</td></tr>
+            ) : (
+              topItems.map((x, idx) => (
+                <tr key={x.name}>
+                  <td><b>#{idx + 1}</b></td>
+                  <td><b>{x.name}</b></td>
+                  <td>{x.quantity}</td>
+                  <td><strong style={{ color: "#1d60df" }}>{money(x.amount)}</strong></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 }
 
 function SettingsPage() {
@@ -435,8 +685,8 @@ function SettingsPage() {
       <button className="primary"><Save size={17} /> Save Settings</button>
     </form>
     <div className="panel">
-      <h3>Printer Setup</h3><p>Install the thermal printer in Windows first.</p>
-      <div className="printer-box"><Printer size={38} /><b>Thermal Printer</b><span>Use an ESC/POS-compatible printer.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div>
+      <h3>Printer Setup</h3><p>For Android Bluetooth printing, pair your 58mm ESC/POS printer first, then configure it in RawBT.</p>
+      <div className="printer-box"><Printer size={38} /><b>Bluetooth Thermal Printer</b><span>Works with POS58UB / compatible ESC/POS printers on Android.</span><button className="secondary" onClick={() => printTest(form)}>Print Test Receipt</button></div>
     </div>
     <div className="panel">
       <h3>Danger Zone</h3><p>Clear all orders and bills data.</p>
@@ -457,104 +707,178 @@ function Toolbar({ title, search, setSearch, action, label }) { return <div clas
 function Modal({ title, onClose, children }) { return <div className="modal-bg" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-head"><h3>{title}</h3><button onClick={onClose}><X /></button></div>{children}</div></div> }
 
 function ReceiptContent({ bill, settings }) {
-  const is58 = (settings?.paper_size || "58mm") === "58mm";
-  return (
-    <div className="receipt" style={{
-      fontFamily: "'Courier New', Courier, monospace",
-      fontSize: is58 ? "7px" : "11px",
-      width: is58 ? "44mm" : "72mm",
-      margin: "0 auto",
-      lineHeight: "1.3"
-    }}>
-      <h2 style={{ textAlign: "center", margin: "0 0 2px", fontSize: is58 ? "11px" : "15px", wordBreak: "break-word" }}>{settings?.restaurant_name || "SASH MANDI DARBAR"}</h2>
-      <p style={{ textAlign: "center", margin: "1px 0", wordBreak: "break-word", fontSize: is58 ? "7px" : "10px" }}>{settings?.address}</p>
-      <p style={{ textAlign: "center", margin: "1px 0", fontSize: is58 ? "7px" : "10px" }}>{settings?.phone}</p>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
-      <div style={{ fontSize: is58 ? "7px" : "10px" }}>Bill: {bill.bill_no}</div>
-      <div style={{ fontSize: is58 ? "7px" : "10px" }}>{new Date(bill.created_at).toLocaleString()}</div>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "7px" : "10px", marginBottom: "2px" }}>
-        <span>ITEM</span><span>AMT</span>
-      </div>
-      {bill.items?.map((x, i) => (
-        <div key={i} style={{ marginBottom: "2px", fontSize: is58 ? "7px" : "10px" }}>
-          <div style={{ wordBreak: "break-word" }}>{x.item_name} x{x.quantity}</div>
-          <div style={{ textAlign: "right" }}>{money(x.amount)}</div>
-        </div>
-      ))}
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: is58 ? "9px" : "13px" }}>
-        <span>TOTAL</span><span>{money(bill.total)}</span>
-      </div>
-      <div style={{ textAlign: "center", marginTop: "2px", fontSize: is58 ? "7px" : "10px" }}>Payment: {bill.payment_method}</div>
-      <hr style={{ border: 0, borderTop: "1px dashed #000", margin: "3px 0" }} />
-      <div style={{ textAlign: "center", fontWeight: "bold", fontSize: is58 ? "8px" : "11px", marginBottom: "4px" }}>Thank You! Visit Again</div>
-    </div>
-  );
+  return <div className="receipt"><h2>{settings?.restaurant_name || "My Restaurant"}</h2><p>{settings?.address}</p><p>{settings?.phone}</p><hr /><div>Bill: {bill.bill_no}</div><div>{new Date(bill.created_at).toLocaleString()}</div><hr />{bill.items?.map((x, i) => <div className="rline" key={i}><span>{x.item_name} x{x.quantity}</span><span>{money(x.amount)}</span></div>)}<hr /><div className="rline bold"><span>TOTAL</span><span>{money(bill.total)}</span></div><div className="center">Payment: {bill.payment_method}</div><hr /><div className="center">Thank You! Visit Again</div></div>
 }
+function escPosBytes(text) {
+  return new TextEncoder().encode(text);
+}
+function concatBytes(...arrays) {
+  const total = arrays.reduce((n, a) => n + a.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  arrays.forEach(a => { out.set(a, offset); offset += a.length; });
+  return out;
+}
+function toBase64(bytes) {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+function padRight(value, length) {
+  const s = String(value ?? "");
+  return s.length >= length ? s.slice(0, length) : s + " ".repeat(length - s.length);
+}
+function padLeft(value, length) {
+  const s = String(value ?? "");
+  return s.length >= length ? s.slice(-length) : " ".repeat(length - s.length) + s;
+}
+function buildEscPosReceipt(bill, settings) {
+  // 58mm printers normally use about 32 columns. Keep the receipt compact.
+  const width = settings?.paper_size === "80mm" ? 48 : 32;
+  const lines = [];
+  const add = (text = "") => lines.push(String(text));
+  const rule = () => add("-".repeat(width));
+  const center = text => {
+    const t = String(text || "");
+    add(t.length >= width ? t.slice(0, width) : " ".repeat(Math.floor((width - t.length) / 2)) + t);
+  };
+
+  const restaurant = settings?.restaurant_name || "My Restaurant";
+  center(restaurant);
+  if (settings?.address) String(settings.address).split(/\\n|,/).forEach(x => center(x.trim()));
+  if (settings?.phone) center(settings.phone);
+  rule();
+  add(`Bill: ${bill.bill_no}`);
+  add(new Date(bill.created_at).toLocaleString());
+  rule();
+
+  (bill.items || []).forEach(x => {
+    const name = String(x.item_name || x.name || "Item");
+    const qty = Number(x.quantity || 0);
+    const amount = Number(x.amount || (Number(x.price || 0) * qty) || 0).toFixed(2);
+    const qtyText = `x${qty}`;
+    const right = `${qtyText} ${amount}`;
+    const available = Math.max(1, width - right.length - 1);
+    if (name.length <= available) {
+      add(padRight(name, available) + " " + right);
+    } else {
+      let remaining = name;
+      while (remaining.length > available) {
+        add(remaining.slice(0, available));
+        remaining = remaining.slice(available);
+      }
+      add(padRight(remaining, available) + " " + right);
+    }
+  });
+  rule();
+  const total = Number(bill.total || 0).toFixed(2);
+  add(padRight("TOTAL", width - total.length - 1) + " " + total);
+  add(`Payment: ${bill.payment_method || "Cash"}`);
+  rule();
+  center("Thank You! Visit Again");
+  add("");
+  add("");
+  add("");
+
+  const ESC = 0x1b, GS = 0x1d;
+  const init = new Uint8Array([ESC, 0x40]);
+  const centerCmd = new Uint8Array([ESC, 0x61, 0x01]);
+  const leftCmd = new Uint8Array([ESC, 0x61, 0x00]);
+  const boldOn = new Uint8Array([ESC, 0x45, 0x01]);
+  const boldOff = new Uint8Array([ESC, 0x45, 0x00]);
+  const cut = new Uint8Array([GS, 0x56, 0x41, 0x03]);
+  const lf = new Uint8Array([0x0a]);
+  const text = escPosBytes(lines.join("\n") + "\n");
+  return concatBytes(init, leftCmd, text, cut);
+}
+
+function printKitchenTicket(ticket, settings) {
+  const width = settings?.paper_size === "80mm" ? 48 : 32;
+  const lines = [];
+  const add = value => lines.push(String(value ?? ""));
+  const center = value => {
+    const text = String(value ?? "");
+    add(text.length >= width ? text.slice(0, width) : " ".repeat(Math.floor((width - text.length) / 2)) + text);
+  };
+  const rule = () => add("-".repeat(width));
+
+  center("KITCHEN ORDER");
+  rule();
+  add(`Order: ${ticket.bill_no}`);
+  add(new Date(ticket.created_at).toLocaleString());
+  rule();
+  (ticket.items || []).forEach(item => {
+    const text = `${Number(item.quantity || 0)} x ${item.item_name || item.name || "Item"}`;
+    for (let i = 0; i < text.length; i += width) add(text.slice(i, i + width));
+  });
+  rule();
+  center("PLEASE PREPARE");
+  add(""); add(""); add("");
+
+  const ESC = 0x1b, GS = 0x1d;
+  const init = new Uint8Array([ESC, 0x40]);
+  const bytes = concatBytes(init, escPosBytes(lines.join("\n") + "\n"), new Uint8Array([GS, 0x56, 0x41, 0x03]));
+  const rawbtUrl = `rawbt:base64,${toBase64(bytes)}`;
+
+  if (/Android/i.test(navigator.userAgent)) {
+    window.location.href = rawbtUrl;
+    return;
+  }
+
+  const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+  const html = `<!doctype html><html><head><title>Kitchen ${escapeHtml(ticket.bill_no)}</title><style>@page{size:${settings?.paper_size || "58mm"} auto;margin:0}body{font-family:monospace;width:${settings?.paper_size === "80mm" ? "80mm" : "58mm"};margin:0 auto;padding:3mm;box-sizing:border-box;font-size:12px;white-space:pre-wrap}h3{text-align:center}</style></head><body><h3>KITCHEN ORDER</h3>${escapeHtml([`Order: ${ticket.bill_no}`, new Date(ticket.created_at).toLocaleString(), "------------------------------", ...(ticket.items || []).map(item => `${item.quantity} x ${item.item_name || item.name || "Item"}`), "------------------------------", "PLEASE PREPARE"].join("\n"))}<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script></body></html>`;
+  const win = window.open("", "_blank", "width=420,height=700");
+  if (!win) return alert("Please allow popups for printing.");
+  win.document.write(html);
+  win.document.close();
+}
+
 function printReceipt(bill, settings) {
-  const is58 = (settings?.paper_size || "58mm") === "58mm";
-  const pageW = is58 ? "58mm" : "80mm";
+  // Android Bluetooth thermal printers using Bluetooth Classic/SPP cannot be
+  // reached directly by Chrome. RawBT acts as the local ESC/POS print bridge.
+  const bytes = buildEscPosReceipt(bill, settings);
+  const base64 = toBase64(bytes);
+  const rawbtUrl = `rawbt:base64,${base64}`;
 
-  // KEY FIX: use pt (print units) not px, and let body width = 100%
-  // so the printer paper edge is the boundary — not a CSS mm value.
-  // Use HTML tables instead of flexbox — far more reliable across all
-  // browser print engines and Windows thermal printer drivers.
-  const fBase = is58 ? "7pt" : "9pt";
-  const fTitle = is58 ? "10pt" : "13pt";
-  const fTotal = is58 ? "9pt" : "11pt";
-  const fFoot = is58 ? "8pt" : "10pt";
-  const pad = is58 ? "1.5mm" : "3mm";
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  if (isAndroid) {
+    window.location.href = rawbtUrl;
+    return;
+  }
 
-  const bodyHTML = buildReceiptHTML(bill, settings);
-  const css = [
-    `@page{size:${pageW} auto;margin:0}`,
-    `*{box-sizing:border-box;margin:0;padding:0}`,
-    `html,body{width:100%;font-family:'Courier New',Courier,monospace;font-size:${fBase};line-height:1.35;color:#000}`,
-    `body{padding:${pad}}`,
-    `.receipt{width:100%}`,
-    `.rh2{text-align:center;font-size:${fTitle};font-weight:bold;word-wrap:break-word;margin-bottom:2pt}`,
-    `.rp{text-align:center;word-wrap:break-word;margin:0}`,
-    `.rhr{border:0;border-top:1pt dashed #000;margin:3pt 0;width:100%}`,
-    `.rtbl{width:100%;border-collapse:collapse}`,
-    `.rtbl td{padding:0;vertical-align:top;font-size:${fBase}}`,
-    `.rtbl .name{word-break:break-word;word-wrap:break-word}`,
-    `.rtbl .amt{text-align:right;white-space:nowrap;padding-left:4pt}`,
-    `.rtbl .ttl{font-weight:bold;font-size:${fTotal}}`,
-    `.rcenter{text-align:center;word-wrap:break-word}`,
-    `.rfooter{text-align:center;font-weight:bold;font-size:${fFoot};margin-top:2pt}`,
-  ].join("");
-
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${bill.bill_no}</title><style>${css}</style></head><body>${bodyHTML}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}<\/script></body></html>`;
-  const w = window.open("", "_blank", "width=300,height=600");
+  // Desktop fallback: retain normal browser printing.
+  const html = `<!doctype html><html><head><title>${bill.bill_no}</title><style>@page{size:${settings?.paper_size || "80mm"} auto;margin:0}body{font-family:Arial,sans-serif;width:${settings?.paper_size === "58mm" ? "58mm" : "80mm"};margin:0 auto;padding:5mm;box-sizing:border-box;font-size:12px}.receipt{text-align:left}.center{text-align:center}.receipt h2{text-align:center;margin:0 0 4px;font-size:18px}.receipt p{text-align:center;margin:2px 0}.rline{display:flex;justify-content:space-between;gap:10px;margin:5px 0}.bold{font-weight:bold;font-size:15px}hr{border:0;border-top:1px dashed #000;margin:7px 0}</style></head><body>${document.querySelector(".receipt-preview")?.innerHTML || buildReceiptHTML(bill, settings)}<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\\/script></body></html>`;
+  const w = window.open("", "_blank", "width=420,height=700");
   if (!w) return alert("Please allow popups for printing.");
   w.document.write(html);
   w.document.close();
 }
+function printTest(s) { const fake = { bill_no: "TEST", created_at: new Date().toISOString(), total: 0, payment_method: "TEST", items: [{ item_name: "Printer Test", quantity: 1, amount: 0 }] }; printReceipt(fake, s) }
 
 function buildReceiptHTML(bill, settings) {
   const itemRows = (bill.items || []).map(x =>
-    `<tr><td class="name">${x.item_name} x${x.quantity}</td><td class="amt">${money(x.amount)}</td></tr>`
+    `<tr><td class="name">${x.item_name || x.name || "Item"} x${x.quantity}</td><td class="amt" style="text-align:right">${money(x.amount || (Number(x.price || 0) * (x.quantity || 1)))}</td></tr>`
   ).join("");
   return [
     `<div class="receipt">`,
-    `<div class="rh2">${settings?.restaurant_name || "SASH MANDI DARBAR"}</div>`,
-    settings?.address ? `<div class="rp">${settings.address}</div>` : "",
-    settings?.phone ? `<div class="rp">Ph: ${settings.phone}</div>` : "",
-    `<hr class="rhr"/>`,
+    `<div class="rh2" style="text-align:center;font-weight:bold;font-size:16px">${settings?.restaurant_name || "SASH MANDI DARBAR"}</div>`,
+    settings?.address ? `<div class="rp" style="text-align:center">${settings.address}</div>` : "",
+    settings?.phone ? `<div class="rp" style="text-align:center">Ph: ${settings.phone}</div>` : "",
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
     `<div>Bill: ${bill.bill_no}</div>`,
-    `<div>${new Date(bill.created_at).toLocaleString()}</div>`,
-    `<hr class="rhr"/>`,
-    `<table class="rtbl"><thead><tr><td class="name"><b>ITEM</b></td><td class="amt"><b>AMT</b></td></tr></thead>`,
+    `<div>${new Date(bill.created_at || Date.now()).toLocaleString()}</div>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<table style="width:100%;border-collapse:collapse"><thead><tr><td style="text-align:left"><b>ITEM</b></td><td style="text-align:right"><b>AMT</b></td></tr></thead>`,
     `<tbody>${itemRows}</tbody></table>`,
-    `<hr class="rhr"/>`,
-    `<table class="rtbl"><tr><td class="name ttl">TOTAL</td><td class="amt ttl">${money(bill.total)}</td></tr></table>`,
-    `<div class="rcenter">Payment: ${bill.payment_method}</div>`,
-    `<hr class="rhr"/>`,
-    `<div class="rfooter">Thank You! Visit Again</div>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<table style="width:100%;border-collapse:collapse"><tr><td style="font-weight:bold">TOTAL</td><td style="font-weight:bold;text-align:right">${money(bill.total)}</td></tr></table>`,
+    `<div style="margin-top:4px">Payment: ${bill.payment_method || "Cash"}</div>`,
+    `<hr style="border:0;border-top:1px dashed #000;margin:7px 0"/>`,
+    `<div style="text-align:center;font-weight:bold;margin-top:4px">Thank You! Visit Again</div>`,
     `</div>`,
   ].join("");
 }
-function printTest(s) { const fake = { bill_no: "TEST", created_at: new Date().toISOString(), total: 0, payment_method: "TEST", items: [{ item_name: "Printer Test", quantity: 1, amount: 0 }] }; printReceipt(fake, s) }
 
 export default App;
+

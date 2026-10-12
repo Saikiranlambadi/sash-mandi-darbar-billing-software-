@@ -7,7 +7,10 @@ import {
   removeDoc,
   fetchCollection,
   getFirebaseConfig,
-  saveFirebaseConfig
+  saveFirebaseConfig,
+  generateShareableConfigUrl,
+  getDeviceName,
+  setDeviceName
 } from "./firebase";
 
 const DEFAULT_CATEGORIES = [
@@ -56,7 +59,7 @@ const LOCAL_IMAGES = {
 
 export function getItemImage(item) {
   const name = (item?.name || "");
-
+  
   if (LOCAL_IMAGES[name]) {
     return LOCAL_IMAGES[name];
   }
@@ -75,11 +78,11 @@ export function getItemImage(item) {
   if (lowerName.includes("shawarma")) return LOCAL_IMAGES["Shawarma"];
   if (lowerName.includes("sweet") || lowerName.includes("dessert") || lowerName.includes("gulab") || lowerName.includes("ladoo") || lowerName.includes("barfi") || lowerName.includes("jalebi")) return LOCAL_IMAGES["Sweets"];
   if (lowerName.includes("drink") || lowerName.includes("pepsi") || lowerName.includes("juice") || lowerName.includes("soda") || lowerName.includes("cola") || lowerName.includes("beverage")) return LOCAL_IMAGES["Drinks"];
-
+  
   if (item && item.image && item.image.trim() !== "" && !item.image.includes("unsplash.com")) {
     return item.image;
   }
-
+  
   return LOCAL_IMAGES["Chicken Fry Mandi (1 Piece)"];
 }
 
@@ -125,12 +128,11 @@ function setStorage(key, value) {
   }
 }
 
-// Seed / Migrate initial data
+// Seed initial local data
 (() => {
-  const CATS_VER = 2; // bump to force-reset old categories
+  const CATS_VER = 2;
   const currentCatsVer = getStorage("rb_categories_ver", 0);
   if (currentCatsVer < CATS_VER) {
-    // Hard reset: only keep DEFAULT_CATEGORIES, drop old stale ones
     setStorage("rb_categories", DEFAULT_CATEGORIES);
     setStorage("rb_categories_ver", CATS_VER);
   }
@@ -138,11 +140,11 @@ function setStorage(key, value) {
   const ITEMS_VER = 2;
   const currentItems = getStorage("rb_items", []);
   const currentItemsVer = getStorage("rb_items_ver", 0);
-
+  
   if (!currentItems.length || currentItemsVer < ITEMS_VER) {
     const mergedItems = [...DEFAULT_ITEMS];
     let maxId = mergedItems.length ? Math.max(...mergedItems.map(x => x.id)) : 0;
-
+    
     currentItems.forEach(item => {
       if (!mergedItems.some(mi => mi.name.toLowerCase() === item.name.toLowerCase())) {
         maxId += 1;
@@ -159,10 +161,10 @@ function setStorage(key, value) {
     const updated = {
       ...existingSettings,
       restaurant_name: DEFAULT_SETTINGS.restaurant_name,
-      address: DEFAULT_SETTINGS.address,
-      phone: DEFAULT_SETTINGS.phone,
-      paper_size: existingSettings.paper_size || DEFAULT_SETTINGS.paper_size,
-      _ver: SETTINGS_VER,
+      address:         DEFAULT_SETTINGS.address,
+      phone:           DEFAULT_SETTINGS.phone,
+      paper_size:      existingSettings.paper_size || DEFAULT_SETTINGS.paper_size,
+      _ver:            SETTINGS_VER,
     };
     setStorage("rb_settings", updated);
   }
@@ -171,80 +173,133 @@ function setStorage(key, value) {
   }
 })();
 
-// Real-Time Sync Subscriptions
+// Real-Time Multi-Device Sync Subscriptions
 let unsubs = [];
+let initialSyncDone = false;
 
 export function setupRealtimeSync() {
-  // Clear previous subscriptions
   unsubs.forEach(unsub => unsub && unsub());
   unsubs = [];
 
   if (!isCloudSyncEnabled()) return;
 
-  // 1. Sync Bills in Real-Time
+  // Real-time listener for bills
   const billsUnsub = subscribeCollection("bills", (remoteBills) => {
     if (!remoteBills) return;
     const localBills = getStorage("rb_bills", []);
-    const map = new Map();
+    const localMap = new Map();
+    localBills.forEach(b => { if (b.bill_no) localMap.set(b.bill_no, b); });
 
-    // Preserve local and merge remote
-    localBills.forEach(b => { if (b.bill_no) map.set(b.bill_no, b); });
-    remoteBills.forEach(b => { if (b.bill_no) map.set(b.bill_no, { ...map.get(b.bill_no), ...b }); });
+    // Detect new bills generated from other staff phones for real-time notification
+    if (initialSyncDone) {
+      remoteBills.forEach(rb => {
+        if (rb.bill_no && !localMap.has(rb.bill_no)) {
+          // Bill was created on another device!
+          window.dispatchEvent(new CustomEvent("rb_new_bill_notification", { detail: rb }));
+        }
+      });
+    }
+
+    // Remote Firestore is the authoritative source of truth for the shared shop
+    const map = new Map();
+    remoteBills.forEach(b => { if (b.bill_no) map.set(b.bill_no, b); });
+
+    // Also preserve any un-uploaded local pending bills
+    localBills.forEach(b => {
+      if (b.bill_no && !map.has(b.bill_no) && b._pendingSync) {
+        map.set(b.bill_no, b);
+      }
+    });
 
     const merged = Array.from(map.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     setStorage("rb_bills", merged);
+    initialSyncDone = true;
     window.dispatchEvent(new CustomEvent("rb_bills_synced", { detail: merged }));
   }, "created_at", "desc");
   unsubs.push(billsUnsub);
 
-  // 2. Sync Food Items in Real-Time
+  // Real-time listener for items
   const itemsUnsub = subscribeCollection("items", (remoteItems) => {
     if (!remoteItems || !remoteItems.length) return;
-    const localItems = getStorage("rb_items", []);
-    const map = new Map();
-
-    localItems.forEach(i => map.set(String(i.id), i));
-    remoteItems.forEach(i => map.set(String(i.id), { ...map.get(String(i.id)), ...i }));
-
-    const merged = Array.from(map.values());
-    setStorage("rb_items", merged);
-    window.dispatchEvent(new CustomEvent("rb_items_synced", { detail: merged }));
+    setStorage("rb_items", remoteItems);
+    window.dispatchEvent(new CustomEvent("rb_items_synced", { detail: remoteItems }));
   });
   unsubs.push(itemsUnsub);
 
-  // 3. Sync Categories in Real-Time
+  // Real-time listener for categories
   const catsUnsub = subscribeCollection("categories", (remoteCats) => {
     if (!remoteCats || !remoteCats.length) return;
-    const localCats = getStorage("rb_categories", []);
-    const map = new Map();
-
-    localCats.forEach(c => map.set(String(c.id), c));
-    remoteCats.forEach(c => map.set(String(c.id), { ...map.get(String(c.id)), ...c }));
-
-    const merged = Array.from(map.values());
-    setStorage("rb_categories", merged);
-    window.dispatchEvent(new CustomEvent("rb_categories_synced", { detail: merged }));
+    setStorage("rb_categories", remoteCats);
+    window.dispatchEvent(new CustomEvent("rb_categories_synced", { detail: remoteCats }));
   });
   unsubs.push(catsUnsub);
+
+  // Real-time listener for settings
+  const settingsUnsub = subscribeCollection("settings", (remoteSettingsList) => {
+    if (!remoteSettingsList || !remoteSettingsList.length) return;
+    const general = remoteSettingsList.find(s => s._id === "general" || s.restaurant_name);
+    if (general) {
+      setStorage("rb_settings", general);
+      window.dispatchEvent(new CustomEvent("rb_settings_synced", { detail: general }));
+    }
+  });
+  unsubs.push(settingsUnsub);
+
+  // Auto-seed cloud database if completely empty
+  autoSeedCloudIfEmpty();
 }
 
-// Start listeners immediately
+async function autoSeedCloudIfEmpty() {
+  if (!isCloudSyncEnabled()) return;
+  try {
+    const existing = await fetchCollection("items");
+    if (!existing || existing.length === 0) {
+      const items = getStorage("rb_items", DEFAULT_ITEMS);
+      const categories = getStorage("rb_categories", DEFAULT_CATEGORIES);
+      const settings = getStorage("rb_settings", DEFAULT_SETTINGS);
+
+      await uploadDoc("settings", "general", settings);
+      for (const c of categories) {
+        await uploadDoc("categories", c.id, c);
+      }
+      for (const i of items) {
+        await uploadDoc("items", i.id, i);
+      }
+    }
+  } catch (err) {
+    console.warn("Auto-seed cloud check note:", err);
+  }
+}
+
+// Start listener immediately on load
 setupRealtimeSync();
 
 // Categories
 export async function getCategories() {
-  return getStorage("rb_categories", DEFAULT_CATEGORIES);
+  const local = getStorage("rb_categories", DEFAULT_CATEGORIES);
+  if (isCloudSyncEnabled() && (!local || local.length === 0)) {
+    try {
+      const remote = await fetchCollection("categories");
+      if (remote && remote.length) {
+        setStorage("rb_categories", remote);
+        return remote;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch categories from cloud", e);
+    }
+  }
+  return local;
 }
 
 export async function addCategory(name) {
   const categories = await getCategories();
-  const nextId = categories.length ? Math.max(...categories.map(c => c.id)) + 1 : 1;
+  const nextId = categories.length ? Math.max(...categories.map(c => Number(c.id) || 0)) + 1 : 1;
   const newCat = { id: nextId, name: name.trim() };
   categories.push(newCat);
   setStorage("rb_categories", categories);
 
   if (isCloudSyncEnabled()) {
-    uploadDoc("categories", newCat.id, newCat);
+    await uploadDoc("categories", newCat.id, newCat);
   }
   return newCat;
 }
@@ -256,10 +311,11 @@ export async function editCategory(id, name) {
     categories[idx].name = name.trim();
     setStorage("rb_categories", categories);
     if (isCloudSyncEnabled()) {
-      uploadDoc("categories", categories[idx].id, categories[idx]);
+      await uploadDoc("categories", categories[idx].id, categories[idx]);
     }
+    return categories[idx];
   }
-  return categories[idx];
+  return null;
 }
 
 export async function deleteCategory(id) {
@@ -268,14 +324,26 @@ export async function deleteCategory(id) {
   setStorage("rb_categories", categories);
 
   if (isCloudSyncEnabled()) {
-    removeDoc("categories", id);
+    await removeDoc("categories", id);
   }
   return { ok: true };
 }
 
 // Menu items
 export async function getItems() {
-  const items = getStorage("rb_items", DEFAULT_ITEMS);
+  let items = getStorage("rb_items", DEFAULT_ITEMS);
+  if (isCloudSyncEnabled() && (!items || items.length === 0)) {
+    try {
+      const remote = await fetchCollection("items");
+      if (remote && remote.length) {
+        setStorage("rb_items", remote);
+        items = remote;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch items from cloud", e);
+    }
+  }
+
   const categories = await getCategories();
   const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
   return items.map(item => {
@@ -292,7 +360,7 @@ export async function getItems() {
 
 export async function addItem(data) {
   const items = getStorage("rb_items", DEFAULT_ITEMS);
-  const nextId = items.length ? Math.max(...items.map(i => i.id)) + 1 : 1;
+  const nextId = items.length ? Math.max(...items.map(i => Number(i.id) || 0)) + 1 : 1;
   const newItem = {
     id: nextId,
     name: data.name.trim(),
@@ -305,7 +373,7 @@ export async function addItem(data) {
   setStorage("rb_items", items);
 
   if (isCloudSyncEnabled()) {
-    uploadDoc("items", newItem.id, newItem);
+    await uploadDoc("items", newItem.id, newItem);
   }
   return newItem;
 }
@@ -325,10 +393,11 @@ export async function editItem(id, data) {
     setStorage("rb_items", items);
 
     if (isCloudSyncEnabled()) {
-      uploadDoc("items", items[idx].id, items[idx]);
+      await uploadDoc("items", items[idx].id, items[idx]);
     }
+    return items[idx];
   }
-  return items[idx];
+  return null;
 }
 
 export async function deleteItem(id) {
@@ -337,7 +406,7 @@ export async function deleteItem(id) {
   setStorage("rb_items", items);
 
   if (isCloudSyncEnabled()) {
-    removeDoc("items", id);
+    await removeDoc("items", id);
   }
   return { ok: true };
 }
@@ -348,8 +417,8 @@ export async function getSettings() {
   return {
     ...saved,
     restaurant_name: DEFAULT_SETTINGS.restaurant_name,
-    address: DEFAULT_SETTINGS.address,
-    phone: DEFAULT_SETTINGS.phone,
+    address:         DEFAULT_SETTINGS.address,
+    phone:           DEFAULT_SETTINGS.phone,
   };
 }
 
@@ -359,45 +428,56 @@ export async function saveSettings(data) {
   setStorage("rb_settings", updated);
 
   if (isCloudSyncEnabled()) {
-    uploadDoc("settings", "general", updated);
+    await uploadDoc("settings", "general", updated);
   }
   return updated;
 }
 
-// Create bill
+// Create bill (Saved permanently to shared cloud database)
 export async function createBill(data) {
-  const bills = getStorage("rb_bills", []);
   const stamp = Date.now().toString(36).toUpperCase();
-  const bill_no = `B${stamp}`;
+  const randomSuffix = Math.floor(100 + Math.random() * 900);
+  const bill_no = `B${stamp}-${randomSuffix}`;
+  const device = getDeviceName();
 
-  const total = (data.items || []).reduce((acc, item) => acc + (item.price * item.quantity), 0);
-
+  const total = (data.items || []).reduce((acc, item) => acc + (Number(item.price || 0) * (item.quantity || 1)), 0);
+  
   const billItems = (data.items || []).map(item => ({
     item_id: item.id,
-    item_name: item.name,
-    quantity: item.quantity,
-    price: item.price,
-    amount: item.price * item.quantity
+    item_name: item.name || item.item_name || "Food Item",
+    quantity: Number(item.quantity || 1),
+    price: Number(item.price || 0),
+    amount: Number(item.price || 0) * Number(item.quantity || 1)
   }));
 
   const newBill = {
-    id: bills.length ? Math.max(...bills.map(b => b.id)) + 1 : 1,
+    id: Date.now(),
     bill_no,
     total,
-    payment_method: data.payment_method || "Cash",
+    payment_method: typeof data.payment_method === "object" ? "Split" : (data.payment_method || "Cash"),
     cash_amount: Number(data.cash_amount) || 0,
     upi_amount: Number(data.upi_amount) || 0,
     card_amount: Number(data.card_amount) || 0,
     created_at: new Date().toISOString(),
-    items: billItems
+    items: billItems,
+    device_name: device
   };
 
+  // Optimistic local update
+  const bills = getStorage("rb_bills", []);
   bills.unshift(newBill);
   setStorage("rb_bills", bills);
 
-  // Instantly upload to Cloud so all other mobile devices receive it in real-time
+  // Permanently save to shared cloud database
   if (isCloudSyncEnabled()) {
-    uploadDoc("bills", newBill.bill_no, newBill);
+    try {
+      await uploadDoc("bills", newBill.bill_no, newBill);
+    } catch (err) {
+      console.error("Failed to upload bill immediately:", err);
+      // Mark as pending sync
+      newBill._pendingSync = true;
+      setStorage("rb_bills", bills);
+    }
   }
 
   return newBill;
@@ -405,7 +485,20 @@ export async function createBill(data) {
 
 // Get bills
 export async function getBills() {
-  return getStorage("rb_bills", []);
+  const local = getStorage("rb_bills", []);
+  if (isCloudSyncEnabled() && local.length === 0) {
+    try {
+      const remote = await fetchCollection("bills");
+      if (remote && remote.length) {
+        remote.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setStorage("rb_bills", remote);
+        return remote;
+      }
+    } catch (err) {
+      console.warn("Failed to fetch initial cloud bills:", err);
+    }
+  }
+  return local;
 }
 
 // Get single bill
@@ -424,7 +517,7 @@ export async function deleteBill(id) {
   setStorage("rb_bills", bills);
 
   if (isCloudSyncEnabled() && target?.bill_no) {
-    removeDoc("bills", target.bill_no);
+    await removeDoc("bills", target.bill_no);
   }
   return { ok: true };
 }
@@ -433,7 +526,7 @@ export async function deleteBill(id) {
 export async function getSalesReport() {
   const bills = await getBills();
   const todayStr = new Date().toISOString().slice(0, 10);
-
+  
   const todayBills = bills.filter(b => b.created_at && b.created_at.slice(0, 10) === todayStr);
 
   const summary = {
@@ -453,11 +546,12 @@ export async function getSalesReport() {
     summary.card += Number(b.card_amount) || 0;
 
     (b.items || []).forEach(item => {
-      if (!topMap[item.item_name]) {
-        topMap[item.item_name] = { name: item.item_name, quantity: 0, amount: 0 };
+      const name = item.item_name || item.name || "Item";
+      if (!topMap[name]) {
+        topMap[name] = { name, quantity: 0, amount: 0 };
       }
-      topMap[item.item_name].quantity += item.quantity;
-      topMap[item.item_name].amount += item.amount;
+      topMap[name].quantity += Number(item.quantity) || 1;
+      topMap[name].amount += Number(item.amount) || (Number(item.price || 0) * (item.quantity || 1));
     });
   });
 
@@ -472,14 +566,14 @@ export async function clearData(password) {
   setStorage("rb_bills", []);
 
   if (isCloudSyncEnabled()) {
-    bills.forEach(b => {
-      if (b.bill_no) removeDoc("bills", b.bill_no);
-    });
+    for (const b of bills) {
+      if (b.bill_no) await removeDoc("bills", b.bill_no);
+    }
   }
   return { ok: true, message: "All data cleared successfully" };
 }
 
-// Push all current local data up to Cloud to guarantee nothing is missed
+// Push all current local data up to Cloud
 export async function syncAllToCloud() {
   if (!isCloudSyncEnabled()) {
     throw new Error("Cloud Sync is not configured yet. Please configure Firebase credentials first.");
@@ -488,6 +582,9 @@ export async function syncAllToCloud() {
   const bills = getStorage("rb_bills", []);
   const items = getStorage("rb_items", DEFAULT_ITEMS);
   const categories = getStorage("rb_categories", DEFAULT_CATEGORIES);
+  const settings = await getSettings();
+
+  await uploadDoc("settings", "general", settings);
 
   for (const b of bills) {
     if (b.bill_no) await uploadDoc("bills", b.bill_no, b);
@@ -523,66 +620,10 @@ export const api = {
   isCloudSyncEnabled,
   getFirebaseConfig,
   saveFirebaseConfig,
+  generateShareableConfigUrl,
+  getDeviceName,
+  setDeviceName,
   setupRealtimeSync
 };
 
 export default api;
-const PRINTER_URL = "http://localhost:9100";
-
-export async function checkPrinter() {
-  const response = await fetch(`${PRINTER_URL}/health`, {
-    method: "GET",
-    cache: "no-store",
-    signal: AbortSignal.timeout(2000),
-  });
-
-  if (!response.ok) {
-    throw new Error("Printer bridge is unavailable.");
-  }
-
-  return response.json();
-}
-
-export async function printKitchenOrder(order) {
-  const content = [
-    {
-      type: "text",
-      text: "KITCHEN ORDER",
-      align: "center",
-      bold: true,
-      size: "large",
-    },
-    { type: "divider" },
-    { type: "text", text: `Order: ${order.orderNumber}`, bold: true },
-    { type: "text", text: `Type: ${order.orderType}` },
-    ...(order.tableNumber
-      ? [{ type: "text", text: `Table: ${order.tableNumber}` }]
-      : []),
-    { type: "divider" },
-    ...order.items.flatMap((item) => [
-      {
-        type: "text",
-        text: `${item.quantity} x ${item.name}`,
-        bold: true,
-      },
-      ...(item.notes
-        ? [{ type: "text", text: `Note: ${item.notes}` }]
-        : []),
-    ]),
-    { type: "divider" },
-    { type: "feed", lines: 3 },
-  ];
-
-  const response = await fetch(`${PRINTER_URL}/print`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!response.ok) {
-    throw new Error("Kitchen ticket could not be printed.");
-  }
-
-  return response.json();
-}

@@ -1,6 +1,9 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   setDoc,
@@ -10,17 +13,68 @@ import {
   query,
   orderBy
 } from "firebase/firestore";
+import { DEFAULT_FIREBASE_CONFIG } from "./firebase-config";
 
 const CONFIG_KEY = "rb_firebase_config";
+const DEVICE_KEY = "rb_device_name";
+
+// Check if a Firebase config was passed via URL parameters (?fb_config=...)
+(() => {
+  if (typeof window === "undefined") return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fbParam = params.get("fb_config");
+    if (fbParam) {
+      const decoded = JSON.parse(decodeURIComponent(fbParam));
+      if (decoded && decoded.apiKey && decoded.projectId) {
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(decoded));
+        // Remove param from address bar cleanly without refreshing
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to parse fb_config from URL parameter:", e);
+  }
+})();
+
+export function getDeviceName() {
+  try {
+    return localStorage.getItem(DEVICE_KEY) || "Staff Phone";
+  } catch {
+    return "Staff Phone";
+  }
+}
+
+export function setDeviceName(name) {
+  try {
+    if (name && name.trim()) {
+      localStorage.setItem(DEVICE_KEY, name.trim());
+      window.dispatchEvent(new CustomEvent("rb_device_name_changed", { detail: name.trim() }));
+    }
+  } catch (e) {
+    console.error("Failed to save device name:", e);
+  }
+}
 
 export function getFirebaseConfig() {
+  // 1. Check local storage
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.apiKey && parsed?.projectId) return parsed;
+    }
   } catch (e) {
-    console.error("Failed to parse firebase config", e);
+    console.error("Failed to parse firebase config from localStorage", e);
   }
 
+  // 2. Check bundled default config from firebase-config.js
+  if (DEFAULT_FIREBASE_CONFIG?.apiKey && DEFAULT_FIREBASE_CONFIG?.projectId) {
+    return DEFAULT_FIREBASE_CONFIG;
+  }
+
+  // 3. Check Vite environment variables
   if (import.meta.env?.VITE_FIREBASE_API_KEY && import.meta.env?.VITE_FIREBASE_PROJECT_ID) {
     return {
       apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -31,6 +85,7 @@ export function getFirebaseConfig() {
       appId: import.meta.env.VITE_FIREBASE_APP_ID || ""
     };
   }
+
   return null;
 }
 
@@ -44,6 +99,14 @@ export function saveFirebaseConfig(config) {
   dbInstance = null;
 }
 
+export function generateShareableConfigUrl() {
+  const config = getFirebaseConfig();
+  if (!config) return null;
+  const encoded = encodeURIComponent(JSON.stringify(config));
+  const base = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
+  return `${base}?fb_config=${encoded}`;
+}
+
 let dbInstance = null;
 
 export function getDb() {
@@ -52,7 +115,16 @@ export function getDb() {
   if (!config || !config.apiKey || !config.projectId) return null;
   try {
     const app = getApps().length ? getApp() : initializeApp(config);
-    dbInstance = getFirestore(app);
+    try {
+      dbInstance = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      });
+    } catch {
+      // Fallback if multi-tab or persistent cache is already active or unsupported
+      dbInstance = getFirestore(app);
+    }
     return dbInstance;
   } catch (err) {
     console.error("Firebase initialization failed:", err);

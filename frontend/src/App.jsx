@@ -8,10 +8,18 @@ import { api, getItemImage } from "./api";
 
 const money = n => `₹${Number(n || 0).toFixed(2)}`;
 
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  if (hour >= 17 && hour < 22) return "Good evening";
+  return "Good night";
+};
+
 function App() {
   const [page, setPage] = useState("billing");
   const [mobile, setMobile] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  const [theme, setTheme] = useState(() => "dark");
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
@@ -74,24 +82,136 @@ function App() {
 
 function Dashboard({ go }) {
   const [data, setData] = useState(null);
-  const load = () => api.daily().then(setData);
+  const [bills, setBills] = useState([]);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [greeting, setGreeting] = useState(getGreeting);
+
+  const load = () => {
+    api.daily().then(setData);
+    api.bills().then(setBills);
+  };
+
   useEffect(() => {
     load();
     window.addEventListener("rb_bills_synced", load);
-    return () => window.removeEventListener("rb_bills_synced", load);
+    const interval = setInterval(() => setGreeting(getGreeting()), 60000);
+    return () => {
+      window.removeEventListener("rb_bills_synced", load);
+      clearInterval(interval);
+    };
   }, []);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const filteredBills = bills.filter(b => {
+    if (filter === "today" && (!b.created_at || !b.created_at.startsWith(todayStr))) {
+      return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchNo = (b.bill_no || "").toLowerCase().includes(q);
+      const matchItems = (b.items || []).some(it => (it.item_name || it.name || "").toLowerCase().includes(q));
+      const matchPay = (b.payment_method || "").toLowerCase().includes(q);
+      return matchNo || matchItems || matchPay;
+    }
+    return true;
+  });
+
   return <div>
-    <div className="welcome"><div><h1>Good morning 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
+    <div className="welcome"><div><h1>{greeting} 👋</h1><p>Manage today's restaurant sales quickly.</p></div><button className="primary" onClick={() => go("billing")}><Plus size={18} /> New Bill</button></div>
     <div className="stats">
       <Stat title="Today's Sales" value={money(data?.summary.total)} icon="₹" />
       <Stat title="Total Bills" value={data?.summary.bills || 0} icon="🧾" />
       <Stat title="Cash Sales" value={money(data?.summary.cash)} icon="💵" />
       <Stat title="UPI Sales" value={money(data?.summary.upi)} icon="📱" />
     </div>
-    <div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div>
-      <div className="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Sales</th></tr></thead>
-        <tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div>
+    <div className="panel">
+      <div className="panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Every Bill ({filteredBills.length})</h3>
+          <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#7c8799" }}>Recent customer orders and detailed billing history</p>
+        </div>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <div className="filter-tabs">
+            <button
+              type="button"
+              className={`filter-tab-btn ${filter === "all" ? "active" : ""}`}
+              onClick={() => setFilter("all")}
+            >
+              All Bills
+            </button>
+            <button
+              type="button"
+              className={`filter-tab-btn ${filter === "today" ? "active" : ""}`}
+              onClick={() => setFilter("today")}
+            >
+              Today's Bills
+            </button>
+          </div>
+          <div className="search" style={{ minWidth: "180px", padding: "6px 10px" }}>
+            <Search size={16} />
+            <input
+              placeholder="Search bill or item..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bill No.</th>
+              <th>Date & Time</th>
+              <th>Items Ordered</th>
+              <th>Payment</th>
+              <th>Amount</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredBills.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: "center", padding: "26px", color: "#8a94a4" }}>
+                  No bills found.
+                </td>
+              </tr>
+            ) : (
+              filteredBills.map(b => (
+                <tr key={b.id || b.bill_no}>
+                  <td><b>{b.bill_no}</b></td>
+                  <td>{new Date(b.created_at || Date.now()).toLocaleString()}</td>
+                  <td>
+                    <div style={{ maxWidth: "340px", whiteSpace: "normal", fontSize: "13px", lineHeight: "1.4" }}>
+                      {(b.items || []).map((it, idx) => (
+                        <span
+                          key={idx}
+                          className="item-pill"
+                        >
+                          {it.item_name || it.name || "Item"} ×{it.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <span className="badge">{b.payment_method || "Cash"}</span>
+                  </td>
+                  <td><strong className="amount-highlight" style={{ fontSize: "15px" }}>{money(b.total)}</strong></td>
+                  <td>
+                    <button className="view-btn" onClick={async () => setSelectedBill(await api.bill(b.id || b.bill_no))}>
+                      View / Reprint
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
+    {selectedBill && <BillModal bill={selectedBill} onClose={() => setSelectedBill(null)} />}
   </div>
 }
 function Stat({ title, value, icon }) { return <div className="stat"><div className="stat-icon">{icon}</div><div><span>{title}</span><strong>{value}</strong></div></div> }
@@ -278,7 +398,7 @@ function Items() {
   };
   const list = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()));
   return <div><Toolbar title="Food Items" search={search} setSearch={setSearch} action={() => { setEditing(null); setShow(true) }} label="Add Item" />
-    <div className="panel table-wrap"><table><thead><tr><th>Image</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><img src={x.image} alt={x.name} style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "2px solid #f1b64a", display: "block" }} /></td><td><b>{x.name}</b></td><td>{x.category_name || "Uncategorized"}</td><td>{money(x.price)}</td><td><span className={x.available ? "badge success" : "badge"}>{x.available ? "Available" : "Unavailable"}</span></td><td className="actions"><button onClick={() => { setEditing(x); setShow(true) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete item?")) { await api.deleteItem(x.id); load() } }}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div>
+    <div className="panel table-wrap"><table><thead><tr><th>Image</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.map(x => <tr key={x.id}><td><img src={getItemImage(x)} alt={x.name} onError={e => { e.target.onerror = null; e.target.src = getItemImage({ name: x.name }); }} style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: "2px solid #f1b64a", display: "block" }} /></td><td><b>{x.name}</b></td><td>{x.category_name || "Uncategorized"}</td><td>{money(x.price)}</td><td><span className={x.available ? "badge success" : "badge"}>{x.available ? "Available" : "Unavailable"}</span></td><td className="actions"><button onClick={() => { setEditing(x); setShow(true) }}><Pencil size={16} /></button><button onClick={async () => { if (confirm("Delete item?")) { await api.deleteItem(x.id); load() } }}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div>
     {show && <Modal title={editing ? "Edit Item" : "Add Food Item"} onClose={() => { setShow(false); setEditing(null) }}><form onSubmit={save} className="form"><label>Item Name<input name="name" defaultValue={editing?.name || ""} required /></label><label>Category<select name="category_id" defaultValue={editing?.category_id || ""}><option value="">Select category</option>{cats.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label><label>Price<input name="price" type="number" step="0.01" min="0" defaultValue={editing?.price || ""} required /></label><label>Image URL (optional)<input name="image" defaultValue={editing?.image || ""} placeholder="https://images.unsplash.com/..." /></label><label className="check"><input name="available" type="checkbox" defaultChecked={editing ? !!editing.available : true} /> Available</label><button className="primary"><Save size={17} /> Save Item</button></form></Modal>}</div>
 }
 
@@ -332,14 +452,111 @@ function HistoryPage() {
 function BillModal({ bill, onClose }) { const [s, setS] = useState(null); useEffect(() => api.settings().then(setS), []); return <Modal title={`Bill ${bill.bill_no}`} onClose={onClose}><div className="receipt-preview"><ReceiptContent bill={bill} settings={s} /></div><button className="primary full" onClick={() => printReceipt(bill, s)}><Printer size={17} /> Reprint Bill</button></Modal> }
 
 function Reports() {
-  const [data, setData] = useState(null);
-  const load = () => api.daily().then(setData);
+  const [bills, setBills] = useState([]);
+  const [filterDate, setFilterDate] = useState("all");
+  const load = () => api.bills().then(setBills);
+
   useEffect(() => {
     load();
     window.addEventListener("rb_bills_synced", load);
     return () => window.removeEventListener("rb_bills_synced", load);
   }, []);
-  return <div><div className="report-header"><div><h1>Today's Report</h1><p>Sales summary for today.</p></div><button className="secondary" onClick={() => window.print()}>Print Report</button></div><div className="stats"><Stat title="Total Sales" value={money(data?.summary.total)} icon="₹" /><Stat title="Bills" value={data?.summary.bills || 0} icon="🧾" /><Stat title="Cash" value={money(data?.summary.cash)} icon="💵" /><Stat title="UPI" value={money(data?.summary.upi)} icon="📱" /></div><div className="panel"><div className="panel-title"><h3>Top Selling Items</h3></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Sales</th></tr></thead><tbody>{(data?.top || []).map(x => <tr key={x.name}><td>{x.name}</td><td>{x.quantity}</td><td>{money(x.amount)}</td></tr>)}</tbody></table></div></div></div>
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const uniqueDates = [...new Set(bills.map(b => b.created_at ? b.created_at.slice(0, 10) : ""))].filter(Boolean).sort((a, b) => b.localeCompare(a));
+  if (!uniqueDates.includes(todayStr)) uniqueDates.unshift(todayStr);
+
+  const selectedBills = filterDate === "all"
+    ? bills
+    : bills.filter(b => b.created_at && b.created_at.startsWith(filterDate));
+
+  const summary = {
+    total: selectedBills.reduce((s, b) => s + (Number(b.total) || 0), 0),
+    bills: selectedBills.length,
+    cash: selectedBills.reduce((s, b) => s + (Number(b.cash_amount) || 0), 0),
+    upi: selectedBills.reduce((s, b) => s + (Number(b.upi_amount) || 0), 0),
+  };
+
+  const topMap = {};
+  selectedBills.forEach(b => {
+    (b.items || []).forEach(item => {
+      const name = item.item_name || item.name || "Item";
+      if (!topMap[name]) topMap[name] = { name, quantity: 0, amount: 0 };
+      topMap[name].quantity += Number(item.quantity) || 0;
+      topMap[name].amount += Number(item.amount) || (Number(item.price || 0) * (Number(item.quantity) || 1));
+    });
+  });
+
+  const topItems = Object.values(topMap).sort((a, b) => b.quantity - a.quantity);
+
+  return <div>
+    <div className="report-header">
+      <div>
+        <h1>Sales & Top Selling Items Report</h1>
+        <p>Comprehensive item-wise sales and performance analytics.</p>
+      </div>
+      <button className="secondary" onClick={() => window.print()}><Printer size={16} /> Print Report</button>
+    </div>
+
+    <div className="panel" style={{ marginBottom: "18px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+      <label style={{ fontWeight: "bold" }}>Filter Period:</label>
+      <select
+        value={filterDate}
+        onChange={e => setFilterDate(e.target.value)}
+        style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid #d5dbe4", outline: "none", fontSize: "15px", background: "white" }}
+      >
+        <option value="all">All Time</option>
+        <option value={todayStr}>Today ({todayStr})</option>
+        {uniqueDates.filter(d => d !== todayStr).map(d => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </select>
+    </div>
+
+    <div className="stats">
+      <Stat title="Total Sales" value={money(summary.total)} icon="₹" />
+      <Stat title="Bills" value={summary.bills} icon="🧾" />
+      <Stat title="Cash Sales" value={money(summary.cash)} icon="💵" />
+      <Stat title="UPI Sales" value={money(summary.upi)} icon="📱" />
+    </div>
+
+    <div className="panel">
+      <div className="panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Top Selling Items</h3>
+          <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#7c8799" }}>
+            Ranked by quantity sold {filterDate === "all" ? "(All Time)" : filterDate === todayStr ? "(Today)" : `(${filterDate})`}
+          </p>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "70px" }}>Rank</th>
+              <th>Item</th>
+              <th>Qty Sold</th>
+              <th>Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topItems.length === 0 ? (
+              <tr><td colSpan="4" style={{ textAlign: "center", padding: "24px", color: "#8a94a4" }}>No sales recorded for this period.</td></tr>
+            ) : (
+              topItems.map((x, idx) => (
+                <tr key={x.name}>
+                  <td><b>#{idx + 1}</b></td>
+                  <td><b>{x.name}</b></td>
+                  <td>{x.quantity}</td>
+                  <td><strong style={{ color: "#1d60df" }}>{money(x.amount)}</strong></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 }
 
 function SettingsPage() {
