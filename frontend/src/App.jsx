@@ -668,9 +668,31 @@ function SettingsPage() {
             <Save size={16} /> Save &amp; Connect Cloud
           </button>
           {isCloud && (
-            <button type="button" className="secondary" onClick={handleSyncAll} disabled={syncing}>
-              <RefreshCw size={16} /> {syncing ? "Syncing..." : "Sync All Local Data to Cloud"}
-            </button>
+            <>
+              <button type="button" className="secondary" onClick={handleSyncAll} disabled={syncing}>
+                <RefreshCw size={16} /> {syncing ? "Syncing..." : "Sync All Local Data to Cloud"}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                style={{ background: "#059669" }}
+                onClick={() => {
+                  const url = api.generateShareableConfigUrl();
+                  if (!url) return alert("Configuration not found.");
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(url).then(() => {
+                      alert("✅ Sync Link Copied!\n\nSend this link to your second phone (via WhatsApp, message, etc.) and open it there. It will automatically connect and sync all bills in real-time!");
+                    }).catch(() => {
+                      prompt("Copy this link and open it on your second phone:", url);
+                    });
+                  } else {
+                    prompt("Copy this link and open it on your second phone:", url);
+                  }
+                }}
+              >
+                📱 Copy Auto-Connect Link for Phone 2
+              </button>
+            </>
           )}
         </div>
       </div>
